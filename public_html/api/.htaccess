@@ -1,0 +1,89 @@
+# ============================================================================
+# BODHANTRA EVENT OS — API Front-Controller Rewrite Rules
+# ============================================================================
+# All requests to /api/* are funnelled through index.php so the PHP router
+# can resolve the endpoint, enforce CORS, and dispatch to the correct
+# controller.  Static files that physically exist on disk are still served
+# directly (fonts, images, compiled assets) to avoid unnecessary PHP overhead.
+# ============================================================================
+
+# Activate the Apache rewrite engine
+RewriteEngine On
+
+# --------------------------------------------------------------------------
+# 1. Set the rewrite base relative to the document root.
+#    Because the api/ directory lives at public_html/api/, any incoming
+#    request like  https://domain.com/api/register  has a URI prefix of /api/.
+# --------------------------------------------------------------------------
+RewriteBase /api/
+
+# --------------------------------------------------------------------------
+# 2. Skip rewriting if the request maps to an actual file or directory.
+#    This ensures that direct hits to real assets (e.g., uploaded vouchers
+#    served through a separate authenticated download script) are not
+#    accidentally routed into the gateway.
+# --------------------------------------------------------------------------
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# --------------------------------------------------------------------------
+# 3. Capture the entire URI path after /api/ and forward it to index.php
+#    as a query-string parameter named "route".
+#
+#    Example transformations:
+#      GET  /api/events            →  index.php?route=events
+#      POST /api/register          →  index.php?route=register
+#      POST /api/upload/voucher    →  index.php?route=upload/voucher
+#      GET  /api/admin/audit-log   →  index.php?route=admin/audit-log
+#
+#    [QSA] = Query String Append — preserves any additional ?key=val pairs.
+#    [L]   = Last rule — stop processing further rewrite directives.
+# --------------------------------------------------------------------------
+RewriteRule ^(.+)$ index.php?route=$1 [QSA,L]
+
+# --------------------------------------------------------------------------
+# 4. Security headers — defence-in-depth at the Apache layer.
+# --------------------------------------------------------------------------
+<IfModule mod_headers.c>
+    # Prevent MIME-type sniffing (stops browsers from interpreting uploads
+    # as executable scripts).
+    Header always set X-Content-Type-Options "nosniff"
+
+    # Block the page from being embedded in an iframe on another domain
+    # (clickjacking mitigation).
+    Header always set X-Frame-Options "DENY"
+
+    # Enable the browser's built-in XSS filter.
+    Header always set X-XSS-Protection "1; mode=block"
+
+    # Disable the Referer header on outbound links to third-party origins.
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# --------------------------------------------------------------------------
+# 5. Deny direct browser access to sensitive PHP includes.
+#    The db.php connection file and any controller scripts must never be
+#    requested directly — they are included by the gateway only.
+# --------------------------------------------------------------------------
+<FilesMatch "^(db|config)\.php$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order Allow,Deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# --------------------------------------------------------------------------
+# 6. Block access to the controllers directory entirely.
+# --------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteRule ^controllers/ - [F,L]
+</IfModule>
+
+# --------------------------------------------------------------------------
+# 7. Disable directory listings so that a request to /api/ without a route
+#    does not expose the file tree.
+# --------------------------------------------------------------------------
+Options -Indexes

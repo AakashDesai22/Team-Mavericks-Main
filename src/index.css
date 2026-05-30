@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   BODHANTRA EVENT OS — Global Design Tokens & Utility Overrides
+   ============================================================================ */
+
+@layer base {
+  /* Smooth scrolling & selection colors */
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: rgba(99, 102, 241, 0.35);
+    color: #e0e7ff;
+  }
+
+  /* Custom scrollbar (Webkit) */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.3);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(99, 102, 241, 0.5);
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
+  }
+}
+
+@layer components {
+  /* ── Glassmorphic Card ─────────────────────────────────────────────── */
+  .glass-card {
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08]
+           rounded-2xl shadow-lg;
+  }
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300
+           hover:bg-white/[0.07] hover:border-white/[0.14]
+           hover:shadow-glow-sm hover:-translate-y-0.5;
+  }
+
+  /* ── Primary Button ────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           px-6 py-3 rounded-xl font-semibold text-sm
+           bg-gradient-to-r from-brand-600 to-brand-500
+           text-white shadow-glow-sm
+           transition-all duration-300 ease-out
+           hover:from-brand-500 hover:to-brand-400
+           hover:shadow-glow hover:-translate-y-0.5
+           active:translate-y-0 active:shadow-glow-sm
+           disabled:opacity-50 disabled:cursor-not-allowed
+           disabled:hover:translate-y-0 disabled:hover:shadow-glow-sm;
+  }
+
+  /* ── Ghost / Secondary Button ──────────────────────────────────────── */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+           px-6 py-3 rounded-xl font-semibold text-sm
+           bg-white/[0.05] border border-white/[0.1]
+           text-slate-300
+           transition-all duration-300 ease-out
+           hover:bg-white/[0.1] hover:border-white/[0.2]
+           hover:text-white hover:-translate-y-0.5
+           active:translate-y-0;
+  }
+
+  /* ── Danger Button ─────────────────────────────────────────────────── */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2
+           px-6 py-3 rounded-xl font-semibold text-sm
+           bg-gradient-to-r from-rose-600 to-rose-500
+           text-white shadow-glow-rose
+           transition-all duration-300 ease-out
+           hover:from-rose-500 hover:to-rose-400
+           hover:shadow-glow-rose hover:-translate-y-0.5
+           active:translate-y-0;
+  }
+
+  /* ── Form Input ────────────────────────────────────────────────────── */
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl
+           bg-white/[0.05] border border-white/[0.1]
+           text-slate-100 placeholder:text-slate-500
+           font-medium text-sm
+           outline-none transition-all duration-300
+           focus:border-brand-500/60 focus:bg-white/[0.07]
+           focus:ring-2 focus:ring-brand-500/20;
+  }
+
+  /* ── Status Badges ─────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1
+           rounded-full text-xs font-bold uppercase tracking-wider;
+  }
+  .badge-pending {
+    @apply badge bg-amber-500/15 text-amber-400 border border-amber-500/25;
+  }
+  .badge-approved {
+    @apply badge bg-emerald-500/15 text-emerald-400 border border-emerald-500/25;
+  }
+  .badge-rejected {
+    @apply badge bg-rose-500/15 text-rose-400 border border-rose-500/25;
+  }
+  .badge-role {
+    @apply badge bg-brand-500/15 text-brand-300 border border-brand-500/25;
+  }
+
+  /* ── Section Header ────────────────────────────────────────────────── */
+  .section-header {
+    @apply text-2xl font-bold bg-gradient-to-r
+           from-white to-slate-400
+           bg-clip-text text-transparent;
+  }
+}
+
+@layer utilities {
+  /* Gradient text shorthand */
+  .text-gradient-brand {
+    @apply bg-gradient-to-r from-brand-400 to-violet-400
+           bg-clip-text text-transparent;
+  }
+
+  /* Mesh background overlay */
+  .bg-mesh {
+    background-image:
+      radial-gradient(at 20% 30%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+      radial-gradient(at 80% 70%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+      radial-gradient(at 50% 50%, rgba(99, 102, 241, 0.03) 0%, transparent 70%);
+  }
+
+  /* Dot grid pattern */
+  .bg-dots {
+    background-image: radial-gradient(rgba(99, 102, 241, 0.15) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+}

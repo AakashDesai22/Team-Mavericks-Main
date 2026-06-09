@@ -6,7 +6,7 @@
  *
  * Automatically detects the environment (Localhost vs. Hostinger Production)
  * and configures settings/flags to ensure seamless operation.
- */
+ * */
 
 declare(strict_types=1);
 
@@ -35,6 +35,7 @@ if ($isLocal) {
         $_ENV['APP_ENV'] = 'local';
         $_SERVER['APP_ENV'] = 'local';
     }
+    define('APP_ENV', 'local'); // Define the global constant
 
     // Load .env variables locally
     $envPath = dirname(__DIR__, 2) . '/.env';
@@ -61,6 +62,15 @@ if ($isLocal) {
             }
         }
     }
+
+    // Map your local array variables to constants if your codebase expects them
+    if (isset($_ENV['DB_HOST'])) {
+        define('DB_HOST', $_ENV['DB_HOST']);
+        define('DB_NAME', $_ENV['DB_NAME']);
+        define('DB_USER', $_ENV['DB_USER']);
+        define('DB_PASS', $_ENV['DB_PASS']);
+    }
+
 } else {
     // -----------------------------------------------------------------------
     // 3. HOSTINGER PRODUCTION ENVIRONMENT SETUP
@@ -68,6 +78,7 @@ if ($isLocal) {
     putenv('APP_ENV=production');
     $_ENV['APP_ENV'] = 'production';
     $_SERVER['APP_ENV'] = 'production';
+    define('APP_ENV', 'production'); // Define the global constant
 
     // Database Credentials for Hostinger Production
     $productionDbSettings = [
@@ -81,10 +92,10 @@ if ($isLocal) {
         putenv("{$name}={$value}");
         $_ENV[$name] = $value;
         $_SERVER[$name] = $value;
+        define($name, $value); // Force defining constants like DB_HOST, DB_NAME
     }
 
     // Override or set mailer configurations for Hostinger email structure.
-    // Ensure native PHP mail() aligns with the verified sender domain.
     $productionMailSettings = [
         'MAIL_FROM_NAME'    => 'Mavericks Verification',
         'MAIL_FROM_ADDRESS' => 'no-reply@teammavericks.org',
@@ -95,5 +106,6 @@ if ($isLocal) {
         putenv("{$name}={$value}");
         $_ENV[$name] = $value;
         $_SERVER[$name] = $value;
+        define($name, $value); // Force defining mail constants
     }
 }

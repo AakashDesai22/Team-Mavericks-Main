@@ -100,6 +100,11 @@ if ($isLocal) {
         'MAIL_FROM_NAME'    => 'Mavericks Verification',
         'MAIL_FROM_ADDRESS' => 'no-reply@teammavericks.org',
         'MAIL_REPLY_TO'     => 'support@teammavericks.org',
+        'SMTP_HOST'         => 'smtp.hostinger.com',
+        'SMTP_PORT'         => '465',
+        'SMTP_SECURE'       => 'ssl',
+        'SMTP_USER'         => 'no-reply@teammavericks.org',
+        'SMTP_PASS'         => '@Bcw8&dz',
     ];
 
     foreach ($productionMailSettings as $name => $value) {

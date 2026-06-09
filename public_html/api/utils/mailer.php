@@ -99,6 +99,11 @@ function getMailConfig(): array
         'from_name'    => getenv('MAIL_FROM_NAME')    ?: 'Mavericks Verification',
         'from_address' => getenv('MAIL_FROM_ADDRESS') ?: 'no-reply@yourdomain.com',
         'reply_to'     => getenv('MAIL_REPLY_TO')     ?: 'support@yourdomain.com',
+        'smtp_host'    => getenv('SMTP_HOST')         ?: 'smtp.hostinger.com',
+        'smtp_port'    => getenv('SMTP_PORT')         ?: '465',
+        'smtp_secure'  => getenv('SMTP_SECURE')       ?: 'ssl',
+        'smtp_user'    => getenv('SMTP_USER')         ?: 'no-reply@teammavericks.org',
+        'smtp_pass'    => getenv('SMTP_PASS')         ?: '@Bcw8&dz',
     ];
 }
 
@@ -180,6 +185,183 @@ function logOtpToFile(string $email, string $otpCode): void
  *
  * @return bool              True if mail() returned true or if logged successfully.
  */
+/**
+ * Dispatch email via secure authenticated SMTP over socket connection.
+ *
+ * Designed to bypass native mail() dropping by Hostinger/server firewalls.
+ *
+ * @param  string $to        Recipient email address.
+ * @param  string $subject   Email subject line.
+ * @param  string $htmlBody  Complete HTML content of the email.
+ * @param  array  $config    SMTP configurations array.
+ *
+ * @return bool              True if the email was successfully accepted by the SMTP server.
+ */
+function sendMailViaSmtp(string $to, string $subject, string $htmlBody, array $config): bool
+{
+    $host = $config['smtp_host'];
+    $port = (int)$config['smtp_port'];
+    $encryption = strtolower($config['smtp_secure']);
+    $username = $config['smtp_user'];
+    $password = $config['smtp_pass'];
+
+    $socketHost = ($encryption === 'ssl') ? 'ssl://' . $host : $host;
+
+    $socket = @fsockopen($socketHost, $port, $errno, $errstr, 15);
+    if (!$socket) {
+        error_log("[BodhantraOS][Mailer][SMTP] Connection failed to {$socketHost}:{$port} - Error: {$errstr} ({$errno})");
+        return false;
+    }
+
+    // Helper to read SMTP responses (handles multiline responses)
+    $readResponse = function($socket) {
+        $data = '';
+        while ($str = fgets($socket, 515)) {
+            $data .= $str;
+            if (substr($str, 3, 1) === ' ') {
+                break;
+            }
+        }
+        return $data;
+    };
+
+    // Helper to write SMTP commands
+    $writeCommand = function($socket, $cmd) {
+        fputs($socket, $cmd . "\r\n");
+    };
+
+    // 1. Read Greeting (Code 220)
+    $resp = $readResponse($socket);
+    if (strpos($resp, '220') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] Connection greeting failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // 2. Send EHLO
+    $localHost = $_SERVER['SERVER_NAME'] ?? 'localhost';
+    $writeCommand($socket, "EHLO {$localHost}");
+    $resp = $readResponse($socket);
+    if (strpos($resp, '250') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] EHLO command failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // 3. Authenticate: AUTH LOGIN
+    $writeCommand($socket, "AUTH LOGIN");
+    $resp = $readResponse($socket);
+    if (strpos($resp, '334') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] AUTH LOGIN failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // Send base64-encoded username
+    $writeCommand($socket, base64_encode($username));
+    $resp = $readResponse($socket);
+    if (strpos($resp, '334') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] Username authentication failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // Send base64-encoded password
+    $writeCommand($socket, base64_encode($password));
+    $resp = $readResponse($socket);
+    if (strpos($resp, '235') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] Password authentication failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // 4. Set MAIL FROM
+    $writeCommand($socket, "MAIL FROM:<" . $config['from_address'] . ">");
+    $resp = $readResponse($socket);
+    if (strpos($resp, '250') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] MAIL FROM command failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // 5. Set RCPT TO
+    $writeCommand($socket, "RCPT TO:<" . $to . ">");
+    $resp = $readResponse($socket);
+    if (strpos($resp, '250') !== 0 && strpos($resp, '251') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] RCPT TO command failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // 6. Send DATA command
+    $writeCommand($socket, "DATA");
+    $resp = $readResponse($socket);
+    if (strpos($resp, '354') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] DATA command failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // 7. Send Raw MIME Body (Header + Content)
+    $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $encodedFromName = '=?UTF-8?B?' . base64_encode($config['from_name']) . '?=';
+
+    $headers = [
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        'From: ' . $encodedFromName . ' <' . $config['from_address'] . '>',
+        'Reply-To: ' . $config['reply_to'],
+        'To: ' . $to,
+        'Subject: ' . $encodedSubject,
+        'Date: ' . date('r'),
+        'Message-ID: <' . md5(uniqid((string)time(), true)) . '@' . $localHost . '>',
+        'X-Mailer: PHP/' . phpversion(),
+        'X-Priority: 1',
+    ];
+
+    $rawEmail = implode("\r\n", $headers) . "\r\n\r\n" . $htmlBody;
+
+    // Dot stuffing (RFC 5321 4.5.2)
+    // Replace sequence of \r\n. with \r\n..
+    $rawEmail = str_replace("\r\n.", "\r\n..", $rawEmail);
+
+    $writeCommand($socket, $rawEmail);
+    
+    // Terminate data transaction
+    $writeCommand($socket, ".");
+    $resp = $readResponse($socket);
+    if (strpos($resp, '250') !== 0) {
+        error_log("[BodhantraOS][Mailer][SMTP] Sending data body failed: " . trim($resp));
+        fclose($socket);
+        return false;
+    }
+
+    // 8. QUIT
+    $writeCommand($socket, "QUIT");
+    $readResponse($socket);
+    fclose($socket);
+
+    return true;
+}
+
+/**
+ * Send an HTML email — dual-routed by environment.
+ *
+ * LOCAL MODE:
+ *   Logs the email metadata to PHP error_log. Does NOT attempt delivery.
+ *   OTP-specific interception is handled at the template level (see
+ *   sendOtpEmail) so that the plaintext code is captured before it enters
+ *   this generic dispatcher.
+ *
+ * PRODUCTION MODE:
+ *   Dispatches via authenticated secure SMTP connection over socket.
+ *
+ * @param  string $to        Recipient email address.
+ * @param  string $subject   Email subject line.
+ * @param  string $htmlBody  Complete HTML content of the email.
+ *
+ * @return bool              True if socket transaction succeeded or if logged successfully.
+ */
 function sendMail(string $to, string $subject, string $htmlBody): bool
 {
     $config = getMailConfig();
@@ -201,42 +383,12 @@ function sendMail(string $to, string $subject, string $htmlBody): bool
     }
 
     // -----------------------------------------------------------------------
-    // PRODUCTION — build hardened headers and dispatch via native mail().
+    // PRODUCTION — Dispatch via authenticated SMTP socket wrapper.
     // -----------------------------------------------------------------------
-
-    // Construct RFC-compliant, security-hardened MIME headers.
-    // Each header is a deliberate deliverability/security decision:
-    //   • MIME-Version + Content-Type: required for HTML rendering
-    //   • From: must match the Hostinger domain's SPF/DKIM records
-    //   • Reply-To: separates support contact from system sender
-    //   • X-Mailer: identifies the sending system for debug tracing
-    //   • X-Priority: 1 flags as High Importance to speed relay delivery
-    $headers = implode("\r\n", [
-        'MIME-Version: 1.0',
-        'Content-Type: text/html; charset=UTF-8',
-        'From: ' . $config['from_name'] . ' <' . $config['from_address'] . '>',
-        'Reply-To: ' . $config['reply_to'],
-        'X-Mailer: PHP/' . phpversion(),
-        'X-Priority: 1',
-    ]);
-
-    // Hostinger-specific envelope sender:
-    // The `-f` flag tells postfix to set the envelope-from (Return-Path)
-    // to the same address as the From header.  Without this, some shared
-    // hosts inject the cPanel username as the envelope sender, which causes
-    // SPF soft-fails and triggers Gmail spam filters.
-    $additionalParams = '-f ' . $config['from_address'];
-
     try {
-        $result = mail($to, $subject, $htmlBody, $headers, $additionalParams);
-
-        if (!$result) {
-            error_log("[BodhantraOS][Mailer][PROD] mail() returned false for {$to} — subject: {$subject}");
-        }
-
-        return $result;
+        return sendMailViaSmtp($to, $subject, $htmlBody, $config);
     } catch (\Throwable $e) {
-        error_log("[BodhantraOS][Mailer][PROD] Exception sending to {$to}: " . $e->getMessage());
+        error_log("[BodhantraOS][Mailer][PROD] SMTP connection exception sending to {$to}: " . $e->getMessage());
         return false;
     }
 }

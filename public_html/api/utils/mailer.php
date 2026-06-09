@@ -209,7 +209,9 @@ function sendMailViaSmtp(string $to, string $subject, string $htmlBody, array $c
 
     $socket = @fsockopen($socketHost, $port, $errno, $errstr, 15);
     if (!$socket) {
-        error_log("[BodhantraOS][Mailer][SMTP] Connection failed to {$socketHost}:{$port} - Error: {$errstr} ({$errno})");
+        $errorMsg = "Connection failed: {$errstr} ({$errno})";
+        error_log("[BodhantraOS][Mailer][SMTP] " . $errorMsg);
+        echo "SMTP CONNECTION FAILED: " . $errorMsg . "\n";
         return false;
     }
 
@@ -225,84 +227,95 @@ function sendMailViaSmtp(string $to, string $subject, string $htmlBody, array $c
         return $data;
     };
 
-    // Helper to write SMTP commands
-    $writeCommand = function($socket, $cmd) {
-        fputs($socket, $cmd . "\r\n");
-    };
-
     // 1. Read Greeting (Code 220)
     $resp = $readResponse($socket);
     if (strpos($resp, '220') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] Connection greeting failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] Greeting failed: " . $errorMsg);
+        echo "SMTP GREETING FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
-    // 2. Send EHLO
+    // 2. EHLO
     $localHost = $_SERVER['SERVER_NAME'] ?? 'localhost';
-    $writeCommand($socket, "EHLO {$localHost}");
+    fputs($socket, "EHLO {$localHost}" . "\r\n");
     $resp = $readResponse($socket);
     if (strpos($resp, '250') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] EHLO command failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] EHLO failed: " . $errorMsg);
+        echo "SMTP EHLO FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
-    // 3. Authenticate: AUTH LOGIN
-    $writeCommand($socket, "AUTH LOGIN");
+    // 3. AUTH LOGIN
+    fputs($socket, "AUTH LOGIN" . "\r\n");
     $resp = $readResponse($socket);
     if (strpos($resp, '334') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] AUTH LOGIN failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] AUTH LOGIN command failed: " . $errorMsg);
+        echo "SMTP AUTH LOGIN CMD FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
-    // Send base64-encoded username
-    $writeCommand($socket, base64_encode($username));
+    // Send username (base64 encoded)
+    fputs($socket, base64_encode($username) . "\r\n");
     $resp = $readResponse($socket);
     if (strpos($resp, '334') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] Username authentication failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] Username auth failed: " . $errorMsg);
+        echo "SMTP USER AUTH FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
-    // Send base64-encoded password
-    $writeCommand($socket, base64_encode($password));
+    // Send password (base64 encoded)
+    fputs($socket, base64_encode($password) . "\r\n");
     $resp = $readResponse($socket);
     if (strpos($resp, '235') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] Password authentication failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] Password auth failed: " . $errorMsg);
+        echo "SMTP PASS AUTH FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
-    // 4. Set MAIL FROM
-    $writeCommand($socket, "MAIL FROM:<" . $config['from_address'] . ">");
+    // 4. MAIL FROM
+    fputs($socket, "MAIL FROM:<" . $config['from_address'] . ">" . "\r\n");
     $resp = $readResponse($socket);
     if (strpos($resp, '250') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] MAIL FROM command failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] MAIL FROM failed: " . $errorMsg);
+        echo "SMTP MAIL FROM FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
-    // 5. Set RCPT TO
-    $writeCommand($socket, "RCPT TO:<" . $to . ">");
+    // 5. RCPT TO
+    fputs($socket, "RCPT TO:<" . $to . ">" . "\r\n");
     $resp = $readResponse($socket);
     if (strpos($resp, '250') !== 0 && strpos($resp, '251') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] RCPT TO command failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] RCPT TO failed: " . $errorMsg);
+        echo "SMTP RCPT TO FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
-    // 6. Send DATA command
-    $writeCommand($socket, "DATA");
+    // 6. DATA
+    fputs($socket, "DATA" . "\r\n");
     $resp = $readResponse($socket);
     if (strpos($resp, '354') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] DATA command failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] DATA command failed: " . $errorMsg);
+        echo "SMTP DATA CMD FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
-    // 7. Send Raw MIME Body (Header + Content)
+    // 7. Send raw data payload
     $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
     $encodedFromName = '=?UTF-8?B?' . base64_encode($config['from_name']) . '?=';
 
@@ -322,22 +335,22 @@ function sendMailViaSmtp(string $to, string $subject, string $htmlBody, array $c
     $rawEmail = implode("\r\n", $headers) . "\r\n\r\n" . $htmlBody;
 
     // Dot stuffing (RFC 5321 4.5.2)
-    // Replace sequence of \r\n. with \r\n..
     $rawEmail = str_replace("\r\n.", "\r\n..", $rawEmail);
 
-    $writeCommand($socket, $rawEmail);
+    fputs($socket, $rawEmail . "\r\n");
+    fputs($socket, "." . "\r\n");
     
-    // Terminate data transaction
-    $writeCommand($socket, ".");
     $resp = $readResponse($socket);
     if (strpos($resp, '250') !== 0) {
-        error_log("[BodhantraOS][Mailer][SMTP] Sending data body failed: " . trim($resp));
+        $errorMsg = trim($resp);
+        error_log("[BodhantraOS][Mailer][SMTP] Data transfer failed: " . $errorMsg);
+        echo "SMTP DATA BODY SEND FAILED: " . $errorMsg . "\n";
         fclose($socket);
         return false;
     }
 
     // 8. QUIT
-    $writeCommand($socket, "QUIT");
+    fputs($socket, "QUIT" . "\r\n");
     $readResponse($socket);
     fclose($socket);
 

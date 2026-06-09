@@ -586,7 +586,7 @@ export default function AllocationEngineDashboard() {
 
       {/* ── STAGE REVEALS DOUBLE-CONFIRMATION MODAL ── */}
       {showRevealModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 dark-zone">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setShowRevealModal(false)} />
           <div className="relative glass-card p-6 w-full max-w-md bg-surface-900/90 border border-white/10 shadow-2xl animate-fade-in text-slate-200">
             <h3 className="text-base font-black text-white flex items-center gap-2 mb-2">

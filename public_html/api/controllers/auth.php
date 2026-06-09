@@ -242,12 +242,24 @@ function handleGetCurrentUser(array $ctx): void
                 e.title AS event_title,
                 e.event_date,
                 e.status AS event_status,
+                e.num_days,
+                e.sessions_per_day,
+                e.feedback_schema,
+                e.payment_type,
+                e.payment_amount,
+                e.payment_context,
+                e.payment_qr_path,
+                e.require_payment_proof,
+                e.finance_contacts,
                 r.status AS registration_status,
                 r.checked_in_state,
                 r.checked_in_at,
                 r.voucher_path,
+                r.participant_id,
+                r.form_data_json,
+                r.rejection_reason,
                 r.created_at AS registered_at
-         FROM registrations r
+         FROM event_registrations r
          INNER JOIN events e ON e.id = r.event_id
          WHERE r.user_id = :uid
          ORDER BY r.created_at DESC'
@@ -276,12 +288,29 @@ function handleGetCurrentUser(array $ctx): void
     $allocations = $allocStmt->fetchAll();
 
     // -----------------------------------------------------------------------
-    // 4. Respond with the full profile state.
+    // 4. Fetch any attendance logs for the user.
+    // -----------------------------------------------------------------------
+    $attendStmt = $pdo->prepare(
+        'SELECT al.id,
+                al.event_id,
+                al.day_number,
+                al.session_label,
+                al.marked_at
+         FROM attendance_log al
+         WHERE al.user_id = :uid
+         ORDER BY al.day_number ASC, al.session_label ASC'
+    );
+    $attendStmt->execute([':uid' => $user['id']]);
+    $attendance = $attendStmt->fetchAll();
+
+    // -----------------------------------------------------------------------
+    // 5. Respond with the full profile state.
     // -----------------------------------------------------------------------
     jsonResponse(200, [
         'success'       => true,
         'user'          => sanitizeUserForResponse($user),
         'registrations' => $registrations,
         'allocations'   => $allocations,
+        'attendance'    => $attendance,
     ]);
 }

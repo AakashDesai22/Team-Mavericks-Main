@@ -192,6 +192,36 @@ function writeAuditLog(?int $actorId, string $action, string $endpoint, string $
 
 // The .htaccess RewriteRule passes the path segment as ?route=...
 $route  = trim($_GET['route'] ?? '', '/');
+
+// If the route is a public upload, serve the static file directly
+if (strpos($route, 'public/uploads/') === 0) {
+    $realFile = dirname(__DIR__) . '/' . $route; // Resolves to public_html/public/uploads/...
+    $realFile = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $realFile);
+    if (file_exists($realFile) && !is_dir($realFile)) {
+        $ext = strtolower(pathinfo($realFile, PATHINFO_EXTENSION));
+        $mimeTypes = [
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'pdf'  => 'application/pdf',
+        ];
+        $contentType = $mimeTypes[$ext] ?? 'application/octet-stream';
+        
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        
+        header("Content-Type: $contentType");
+        header("Content-Length: " . filesize($realFile));
+        readfile($realFile);
+        exit;
+    } else {
+        error_log("[BodhantraOS][FileServe] Static upload file not found: " . $realFile);
+    }
+}
+
 $method = strtoupper($_SERVER['REQUEST_METHOD']);
 $body   = parseJsonBody();
 $token  = extractBearerToken();
@@ -253,10 +283,25 @@ try {
         ],
 
         // --- Authentication / Registration --------------------------------
+        // Legacy registration endpoint (DEPRECATED — use /register/initiate + /register/verify-otp).
+        // Kept for backward compatibility during transition.
         'POST:register' => [
             'controller' => 'register.php',
             'action'     => 'handleRegistration',
-            'audit'      => 'User registration attempt',
+            'audit'      => '[DEPRECATED] Legacy user registration attempt',
+        ],
+
+        // New OTP-verified registration flow (Phase 1).
+        'POST:register/initiate' => [
+            'controller' => 'public_register.php',
+            'action'     => 'handleInitiateRegistration',
+            'audit'      => 'OTP registration initiation',
+        ],
+
+        'POST:register/verify-otp' => [
+            'controller' => 'public_register.php',
+            'action'     => 'handleVerifyOtp',
+            'audit'      => 'OTP verification + account creation',
         ],
 
         'POST:auth/login' => [
@@ -295,6 +340,27 @@ try {
             'controller' => 'upload_voucher.php',
             'action'     => 'handleVoucherUpload',
             'audit'      => 'Payment voucher upload',
+        ],
+
+        // --- Poster Upload ------------------------------------------------
+        'POST:upload/poster' => [
+            'controller' => 'upload_poster.php',
+            'action'     => 'handlePosterUpload',
+            'audit'      => 'Event poster upload',
+        ],
+
+        // --- QR Upload ----------------------------------------------------
+        'POST:upload/qr' => [
+            'controller' => 'upload_qr.php',
+            'action'     => 'handleQrUpload',
+            'audit'      => 'Event QR upload',
+        ],
+
+        // --- Registration Dynamic File Upload -----------------------------
+        'POST:upload/registration-file' => [
+            'controller' => 'upload_registration_file.php',
+            'action'     => 'handleRegistrationFileUpload',
+            'audit'      => 'Registration file upload',
         ],
 
         // --- Registration Management (Admin/Member) -----------------------
@@ -354,6 +420,19 @@ try {
             'audit'      => 'Participant check-in',
         ],
 
+        // --- User Invitations (Phase 3) ----------------------------------
+        'POST:users/invite' => [
+            'controller' => 'users.php',
+            'action'     => 'handleInviteUser',
+            'audit'      => 'Invite new teammates',
+        ],
+
+        'GET:users' => [
+            'controller' => 'users.php',
+            'action'     => 'handleListUsers',
+            'audit'      => 'List all users',
+        ],
+
         // --- Audit Ledger (Admin) ----------------------------------------
         'GET:admin/audit-log' => [
             'controller' => 'audit_logger.php',
@@ -385,6 +464,26 @@ try {
             'controller' => 'certificates.php',
             'action'     => 'handleVerifyCertificate',
             'audit'      => 'Certificate QR verification',
+        ],
+
+        // --- Attendance & Check-In (Phase 2) -----------------------------
+        'POST:attendance/log' => [
+            'controller' => 'attendance.php',
+            'action'     => 'handleLogAttendance',
+            'audit'      => 'Log high-throughput session attendance',
+        ],
+
+        'GET:attendance/export' => [
+            'controller' => 'attendance.php',
+            'action'     => 'handleExportAttendance',
+            'audit'      => 'Export event attendance CSV',
+        ],
+
+        // --- Custom Feedback & Assessments (Phase 2) ---------------------
+        'POST:feedback/submit' => [
+            'controller' => 'feedback.php',
+            'action'     => 'handleSubmitFeedback',
+            'audit'      => 'Submit participant assessment feedback',
         ],
     ];
 
@@ -440,6 +539,62 @@ try {
             'action'     => 'handleUpdateUserRole',
             'audit'      => 'Update user role',
             'paramNames' => ['user_id'],
+        ],
+        // DELETE /users/{id}
+        [
+            'pattern'    => '#^DELETE:users/(\d+)$#',
+            'controller' => 'users.php',
+            'action'     => 'handleDeleteUser',
+            'audit'      => 'Delete user account',
+            'paramNames' => ['user_id'],
+        ],
+        // PUT /users/{id}
+        [
+            'pattern'    => '#^PUT:users/(\d+)$#',
+            'controller' => 'users.php',
+            'action'     => 'handleUpdateUser',
+            'audit'      => 'Update user details',
+            'paramNames' => ['user_id'],
+        ],
+        // POST /events/{id}/register — Event-scoped participant signup (Phase 1)
+        [
+            'pattern'    => '#^POST:events/(\d+)/register$#',
+            'controller' => 'public_register.php',
+            'action'     => 'handleEventSignup',
+            'audit'      => 'Event participant registration',
+            'paramNames' => ['event_id'],
+        ],
+        // POST /events/{id}/register/initiate — Guest event registration OTP initiation
+        [
+            'pattern'    => '#^POST:events/(\d+)/register/initiate$#',
+            'controller' => 'public_register.php',
+            'action'     => 'handleEventSignupInitiate',
+            'audit'      => 'Guest event registration OTP initiation',
+            'paramNames' => ['event_id'],
+        ],
+        // POST /events/{id}/register/verify — Guest event registration OTP verification
+        [
+            'pattern'    => '#^POST:events/(\d+)/register/verify$#',
+            'controller' => 'public_register.php',
+            'action'     => 'handleEventSignupVerify',
+            'audit'      => 'Guest event registration OTP verification',
+            'paramNames' => ['event_id'],
+        ],
+        // GET /attendance/export/{id} — Dynamic CSV export path (Phase 2)
+        [
+            'pattern'    => '#^GET:attendance/export/(\d+)$#',
+            'controller' => 'attendance.php',
+            'action'     => 'handleExportAttendance',
+            'audit'      => 'Export event attendance CSV',
+            'paramNames' => ['event_id'],
+        ],
+        // GET /admin/events/{id}/feedback — Dynamic feedback details path
+        [
+            'pattern'    => '#^GET:admin/events/(\d+)/feedback$#',
+            'controller' => 'feedback.php',
+            'action'     => 'handleGetEventFeedback',
+            'audit'      => 'Fetch event feedback submissions',
+            'paramNames' => ['event_id'],
         ],
     ];
 

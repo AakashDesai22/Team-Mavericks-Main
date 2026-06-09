@@ -386,6 +386,20 @@ function handleVoucherUpload(array $ctx): void
             ':rid'    => $registration['id'],
         ]);
 
+        $updateEvtReg = $pdo->prepare(
+            'UPDATE event_registrations
+             SET voucher_path = :path,
+                 status = :status,
+                 updated_at = NOW()
+             WHERE user_id = :uid AND event_id = :eid'
+        );
+        $updateEvtReg->execute([
+            ':path'   => $relativePath,
+            ':status' => 'Pending_Verification',
+            ':uid'    => $user['id'],
+            ':eid'    => $eventId,
+        ]);
+
         $registrationId = (int)$registration['id'];
 
         writeAuditLog(
@@ -396,20 +410,44 @@ function handleVoucherUpload(array $ctx): void
         );
     } else {
         // -----------------------------------------------------------------
-        // New registration — create the row.
+        // New registration — create the row in both tables.
         // -----------------------------------------------------------------
-        $insertStmt = $pdo->prepare(
-            'INSERT INTO registrations (user_id, event_id, status, voucher_path, checked_in_state, created_at, updated_at)
-             VALUES (:uid, :eid, :status, :path, 0, NOW(), NOW())'
-        );
-        $insertStmt->execute([
-            ':uid'    => $user['id'],
-            ':eid'    => $eventId,
-            ':status' => 'Pending_Verification',
-            ':path'   => $relativePath,
-        ]);
+        require_once __DIR__ . '/../utils/id_generator.php';
+        
+        $pdo->beginTransaction();
+        try {
+            $participantId = generateParticipantId($pdo);
 
-        $registrationId = (int)$pdo->lastInsertId();
+            $insertStmt = $pdo->prepare(
+                'INSERT INTO registrations (user_id, event_id, status, voucher_path, checked_in_state, created_at, updated_at)
+                 VALUES (:uid, :eid, :status, :path, 0, NOW(), NOW())'
+            );
+            $insertStmt->execute([
+                ':uid'    => $user['id'],
+                ':eid'    => $eventId,
+                ':status' => 'Pending_Verification',
+                ':path'   => $relativePath,
+            ]);
+
+            $registrationId = (int)$pdo->lastInsertId();
+
+            $insertEvtStmt = $pdo->prepare(
+                'INSERT INTO event_registrations (user_id, event_id, participant_id, status, voucher_path, checked_in_state, created_at, updated_at)
+                 VALUES (:uid, :eid, :pid, :status, :path, 0, NOW(), NOW())'
+            );
+            $insertEvtStmt->execute([
+                ':uid'    => $user['id'],
+                ':eid'    => $eventId,
+                ':pid'    => $participantId,
+                ':status' => 'Pending_Verification',
+                ':path'   => $relativePath,
+            ]);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
 
         writeAuditLog(
             (int)$user['id'],

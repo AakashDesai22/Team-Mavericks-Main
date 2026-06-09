@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 /**
  * ============================================================================
@@ -12,7 +13,6 @@ import { useAuth } from '../context/AuthContext';
  *   Mobile   → Hamburger trigger → animated slide-in overlay.
  *
  * The navigation menu dynamically filters links based on the user's role_tier.
- * Participant users never see admin/operator links in the DOM.
  */
 
 // ---------------------------------------------------------------------------
@@ -90,6 +90,26 @@ const Icons = {
       <path d="M12 16v4" /><path d="M8 20h8" />
     </svg>
   ),
+  Home: (p) => (
+    <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <polyline points="9 22 9 12 15 12 15 22" />
+    </svg>
+  ),
+  Sun: (p) => (
+    <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </svg>
+  ),
+  Moon: (p) => (
+    <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  ),
 };
 
 // ---------------------------------------------------------------------------
@@ -97,6 +117,12 @@ const Icons = {
 // Each entry defines: path, label, icon, and which role_tiers can see it.
 // ---------------------------------------------------------------------------
 const NAV_ITEMS = [
+  {
+    path: '/',
+    label: 'Home Page',
+    icon: Icons.Home,
+    roles: ['Admin', 'Member', 'Participant'],
+  },
   {
     path: '/dashboard',
     label: 'Dashboard',
@@ -162,22 +188,13 @@ const NAV_ITEMS = [
 ];
 
 
-// ---------------------------------------------------------------------------
-// Role Tier Badge Colors
-// ---------------------------------------------------------------------------
-const TIER_STYLES = {
-  Admin:       'from-rose-500 to-orange-500',
-  Member:      'from-brand-500 to-violet-500',
-  Participant: 'from-emerald-500 to-teal-500',
-};
-
-
 // ===========================================================================
 // Dashboard Layout Component
 // ===========================================================================
 
 export default function DashboardLayout() {
   const { user, roleTier, logout } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -206,15 +223,15 @@ export default function DashboardLayout() {
       {/* ── Logo ───────────────────────────────────────────────────────── */}
       <div className="p-6 pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-violet-500
-                          flex items-center justify-center shadow-glow-sm shrink-0">
-            <span className="text-white font-black text-lg">B</span>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+               style={{ background: `linear-gradient(135deg, var(--brand-primary), var(--brand-light))`, boxShadow: 'var(--shadow-glow)' }}>
+            <span className="font-black text-lg" style={{ color: 'var(--text-inverse)' }}>B</span>
           </div>
           <div className="min-w-0">
-            <h1 className="text-base font-bold text-white tracking-tight truncate">
+            <h1 className="text-base font-bold tracking-tight truncate" style={{ color: 'var(--text-primary)' }}>
               Bodhantra OS
             </h1>
-            <p className="text-[11px] text-slate-500 font-medium uppercase tracking-widest">
+            <p className="text-[11px] font-medium uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>
               Event Platform
             </p>
           </div>
@@ -222,7 +239,7 @@ export default function DashboardLayout() {
       </div>
 
       {/* ── Divider ──────────────────────────────────────────────────── */}
-      <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="mx-4 h-px" style={{ background: 'linear-gradient(to right, transparent, var(--border-primary), transparent)' }} />
 
       {/* ── Navigation Links ─────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" id="main-navigation">
@@ -231,7 +248,7 @@ export default function DashboardLayout() {
           if (item.section) {
             return (
               <div key={`section-${idx}`} className="pt-5 pb-2 px-3">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-600">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--text-faint)' }}>
                   {item.section}
                 </p>
               </div>
@@ -243,15 +260,22 @@ export default function DashboardLayout() {
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === '/'}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
-                 transition-all duration-200 group
-                 ${isActive
-                   ? 'bg-brand-500/15 text-brand-300 shadow-glow-sm border border-brand-500/20'
-                   : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]'
-                 }`
+                 transition-all duration-200 group nav-link
+                 ${isActive ? 'nav-active' : ''}`
               }
+              style={({ isActive }) => isActive ? {
+                background: 'var(--nav-active-bg)',
+                color: 'var(--nav-active-text)',
+                boxShadow: 'var(--nav-active-glow)',
+                border: '1px solid var(--nav-active-border)',
+              } : {
+                color: 'var(--text-muted)',
+                border: '1px solid transparent',
+              }}
             >
               <Icon className="w-[18px] h-[18px] shrink-0 transition-colors duration-200" />
               <span className="truncate">{item.label}</span>
@@ -261,23 +285,59 @@ export default function DashboardLayout() {
       </nav>
 
       {/* ── Divider ──────────────────────────────────────────────────── */}
-      <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="mx-4 h-px" style={{ background: 'linear-gradient(to right, transparent, var(--border-primary), transparent)' }} />
+
+      {/* ── Theme Toggle ─────────────────────────────────────────────── */}
+      <div className="px-4 pt-4">
+        <button
+          onClick={toggleTheme}
+          className="theme-toggle"
+          id="theme-toggle-button"
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            {isDark ? (
+              <Icons.Moon className="w-[18px] h-[18px] shrink-0" style={{ color: 'var(--brand-text)' }} />
+            ) : (
+              <Icons.Sun className="w-[18px] h-[18px] shrink-0" style={{ color: 'var(--gold)' }} />
+            )}
+            <span className="truncate text-sm">{isDark ? 'Dark Mode' : 'Light Mode'}</span>
+          </div>
+          <div className="theme-toggle-track" data-active={isDark ? 'true' : 'false'}>
+            <div className="theme-toggle-thumb" data-active={isDark ? 'true' : 'false'}>
+              {isDark ? (
+                <Icons.Moon className="w-3 h-3" style={{ color: 'var(--brand-primary)' }} />
+              ) : (
+                <Icons.Sun className="w-3 h-3" style={{ color: 'var(--gold)' }} />
+              )}
+            </div>
+          </div>
+        </button>
+      </div>
 
       {/* ── User Info + Logout ────────────────────────────────────────── */}
       <div className="p-4 space-y-3">
         <div className="glass-card p-3 flex items-center gap-3">
           {/* Avatar */}
-          <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TIER_STYLES[roleTier] || TIER_STYLES.Participant}
-                           flex items-center justify-center shrink-0 shadow-lg`}>
-            <span className="text-white font-bold text-sm">
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-lg"
+               style={{
+                 background: `linear-gradient(135deg, var(${
+                   roleTier === 'Admin' ? '--tier-admin-from' :
+                   roleTier === 'Member' ? '--tier-member-from' : '--tier-participant-from'
+                 }), var(${
+                   roleTier === 'Admin' ? '--tier-admin-to' :
+                   roleTier === 'Member' ? '--tier-member-to' : '--tier-participant-to'
+                 }))`
+               }}>
+            <span className="font-bold text-sm" style={{ color: 'var(--text-inverse)' }}>
               {user?.name?.charAt(0)?.toUpperCase() || '?'}
             </span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-slate-200 truncate">
+            <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
               {user?.name || 'User'}
             </p>
-            <p className="text-[11px] text-slate-500 font-medium truncate">
+            <p className="text-[11px] font-medium truncate" style={{ color: 'var(--text-faint)' }}>
               {roleTier}
             </p>
           </div>
@@ -287,10 +347,22 @@ export default function DashboardLayout() {
           onClick={handleLogout}
           className="w-full flex items-center justify-center gap-2
                      px-4 py-2.5 rounded-xl text-sm font-medium
-                     text-slate-400 hover:text-rose-400
-                     bg-white/[0.03] hover:bg-rose-500/10
-                     border border-white/[0.06] hover:border-rose-500/20
                      transition-all duration-300"
+          style={{
+            color: 'var(--text-muted)',
+            background: 'var(--bg-hover)',
+            border: '1px solid var(--border-subtle)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--rose)';
+            e.currentTarget.style.background = 'var(--rose-bg)';
+            e.currentTarget.style.borderColor = 'var(--rose-border)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-muted)';
+            e.currentTarget.style.background = 'var(--bg-hover)';
+            e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          }}
           id="logout-button"
         >
           <Icons.LogOut className="w-4 h-4" />
@@ -304,7 +376,7 @@ export default function DashboardLayout() {
   // Render
   // -------------------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-surface-900 bg-mesh">
+    <div className="min-h-screen bg-mesh" style={{ backgroundColor: 'var(--bg-primary)' }}>
       {/* ================================================================= */}
       {/* MOBILE OVERLAY SIDEBAR                                            */}
       {/* ================================================================= */}
@@ -312,20 +384,24 @@ export default function DashboardLayout() {
         <div className="fixed inset-0 z-50 lg:hidden">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+            className="absolute inset-0 animate-fade-in"
+            style={{ backgroundColor: 'var(--bg-overlay)', backdropFilter: 'blur(4px)' }}
             onClick={() => setSidebarOpen(false)}
           />
           {/* Slide-in panel */}
-          <div className="absolute left-0 top-0 bottom-0 w-72
-                          bg-surface-900/95 backdrop-blur-xl
-                          border-r border-white/[0.08]
-                          shadow-2xl animate-slide-in-left">
+          <div className="absolute left-0 top-0 bottom-0 w-72 shadow-2xl animate-slide-in-left"
+               style={{
+                 backgroundColor: 'var(--bg-sidebar)',
+                 backdropFilter: `blur(var(--blur-strength))`,
+                 borderRight: '1px solid var(--border-subtle)',
+               }}>
             {/* Close button */}
             <button
               onClick={() => setSidebarOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg
-                         text-slate-500 hover:text-white hover:bg-white/10
-                         transition-colors duration-200"
+              className="absolute top-4 right-4 p-1.5 rounded-lg transition-colors duration-200"
+              style={{ color: 'var(--text-faint)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--bg-active)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-faint)'; e.currentTarget.style.background = 'transparent'; }}
               aria-label="Close menu"
             >
               <Icons.X className="w-5 h-5" />
@@ -338,9 +414,12 @@ export default function DashboardLayout() {
       {/* ================================================================= */}
       {/* DESKTOP PERMANENT SIDEBAR                                         */}
       {/* ================================================================= */}
-      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72
-                         bg-surface-900/80 backdrop-blur-xl
-                         border-r border-white/[0.06]"
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72"
+             style={{
+               backgroundColor: 'var(--bg-sidebar)',
+               backdropFilter: `blur(var(--blur-strength))`,
+               borderRight: '1px solid var(--border-subtle)',
+             }}
              id="desktop-sidebar">
         {SidebarContent}
       </aside>
@@ -350,25 +429,29 @@ export default function DashboardLayout() {
       {/* ================================================================= */}
       <div className="lg:pl-72 min-h-screen flex flex-col">
         {/* ── Mobile Top Bar ─────────────────────────────────────────── */}
-        <header className="lg:hidden sticky top-0 z-40
-                           bg-surface-900/80 backdrop-blur-xl
-                           border-b border-white/[0.06]
-                           px-4 py-3 flex items-center gap-3">
+        <header className="lg:hidden sticky top-0 z-40 px-4 py-3 flex items-center gap-3"
+                style={{
+                  backgroundColor: 'var(--bg-mobile-header)',
+                  backdropFilter: `blur(var(--blur-strength))`,
+                  borderBottom: '1px solid var(--border-subtle)',
+                }}>
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-white
-                       hover:bg-white/10 transition-colors duration-200"
+            className="p-2 -ml-2 rounded-lg transition-colors duration-200"
+            style={{ color: 'var(--text-muted)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--bg-active)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
             aria-label="Open menu"
             id="mobile-menu-button"
           >
             <Icons.Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500
-                            flex items-center justify-center">
-              <span className="text-white font-black text-xs">B</span>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                 style={{ background: `linear-gradient(135deg, var(--brand-primary), var(--brand-light))` }}>
+              <span className="font-black text-xs" style={{ color: 'var(--text-inverse)' }}>B</span>
             </div>
-            <span className="text-sm font-bold text-white">Bodhantra OS</span>
+            <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Bodhantra OS</span>
           </div>
         </header>
 

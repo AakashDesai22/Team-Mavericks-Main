@@ -4,19 +4,29 @@
  * BODHANTRA EVENT OS — Participant Registration Controller
  * ============================================================================
  *
- * Handles public self-service participant sign-ups:
- *   • POST /register  →  handleRegistration()
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  ⚠️  DEPRECATED — Phase 1 Refactoring                                  ║
+ * ║                                                                        ║
+ * ║  This controller is superseded by public_register.php which provides:  ║
+ * ║    • OTP-verified registration (POST /register/initiate)               ║
+ * ║    • Account creation with MAV-MEM-XXX IDs (/register/verify-otp)     ║
+ * ║    • Event-scoped participant signup (POST /events/{id}/register)      ║
+ * ║                                                                        ║
+ * ║  This file is kept for backward compatibility ONLY.                    ║
+ * ║  New features should be added to public_register.php.                  ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
  *
- * Flow:
+ * Legacy flow (POST /register):
  *   1. Extract & sanitize input fields.
  *   2. Run strict format validations (email, phone, required fields).
  *   3. Check for duplicate email.
- *   4. Generate a deterministic, unique registration ID (BODH2026-XXXXXX).
+ *   4. Generate a registration ID (BODH2026-XXXXXX — old format).
  *   5. Generate a temporary password for initial access.
  *   6. Insert into users with role_tier = 'Participant'.
  *   7. Return credentials + tracking code.
  *
  * @package BodhantraOS\Controllers
+ * @deprecated Use public_register.php instead.
  */
 
 declare(strict_types=1);
@@ -55,15 +65,13 @@ function handleRegistration(array $ctx): void
 
     // -----------------------------------------------------------------------
     // 1. Extract & Sanitize
-    //    trim() removes accidental whitespace; htmlspecialchars is NOT needed
-    //    here because we store raw text and the React frontend handles
-    //    rendering escaping.  SQL injection is handled by PDO bindings.
     // -----------------------------------------------------------------------
     $name         = trim($body['name']          ?? '');
     $email        = trim($body['email']         ?? '');
     $phone        = trim($body['phone']         ?? '');
-    $branch       = trim($body['branch']        ?? '');
-    $academicYear = trim($body['academic_year'] ?? '');
+    $branch       = trim($body['branch']        ?? 'Other');
+    $academicYear = trim($body['academic_year'] ?? 'FY');
+    $role         = trim($body['role_tier']     ?? $body['role'] ?? 'Member');
 
     // -----------------------------------------------------------------------
     // 2. Server-Side Validation
@@ -86,29 +94,19 @@ function handleRegistration(array $ctx): void
         $errors[] = 'Email address is too long (max 255 characters).';
     }
 
-    // --- Phone: required, 10–15 digits (international support) ---
+    // --- Phone: required, 10–15 digits ---
     if ($phone === '') {
         $errors[] = 'Phone number is required.';
     } elseif (!preg_match('/^\+?[0-9]{10,15}$/', $phone)) {
         $errors[] = 'Phone must be 10–15 digits. Optional leading + for country code.';
     }
 
-    // --- Branch: required ---
-    if ($branch === '') {
-        $errors[] = 'Academic branch / department is required.';
-    } elseif (mb_strlen($branch) > 100) {
-        $errors[] = 'Branch name is too long (max 100 characters).';
+    // --- Role: only Admin and Member allowed for registration ---
+    if ($role !== 'Admin' && $role !== 'Member') {
+        $errors[] = 'Role must be either Admin or Member.';
     }
 
-    // --- Academic Year: required, validate against allowed set ---
-    $validYears = ['FY', 'SY', 'TY', 'Final', 'PG-1', 'PG-2', 'PhD'];
-    if ($academicYear === '') {
-        $errors[] = 'Academic year is required.';
-    } elseif (!in_array($academicYear, $validYears, true)) {
-        $errors[] = 'Academic year must be one of: ' . implode(', ', $validYears) . '.';
-    }
-
-    // --- Return all errors at once for better UX ---
+    // --- Return all errors at once ---
     if (!empty($errors)) {
         jsonResponse(400, [
             'success' => false,
@@ -121,8 +119,6 @@ function handleRegistration(array $ctx): void
 
     // -----------------------------------------------------------------------
     // 3. Duplicate Email Check
-    //    We do this as a SELECT first (instead of relying solely on the
-    //    UNIQUE constraint) to return a friendly message.
     // -----------------------------------------------------------------------
     $dupCheck = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
     $dupCheck->execute([':email' => $email]);
@@ -135,58 +131,9 @@ function handleRegistration(array $ctx): void
     }
 
     // -----------------------------------------------------------------------
-    // 4. Deterministic Registration ID Generation
-    //
-    //    Format: BODH2026-XXXXXX
-    //    The 6-char suffix is cryptographically random, uppercase alpha-numeric.
-    //    We loop until uniqueness is confirmed (collision probability is
-    //    astronomically low: 36^6 = ~2.18 billion combinations).
+    // 4. Password Enforce (Mobile Number)
     // -----------------------------------------------------------------------
-    $regId = '';
-    $maxAttempts = 10;
-
-    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-        // Generate 6 random uppercase alpha-numeric characters.
-        $suffix = strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
-        // Replace any lowercase hex chars with random uppercase letters.
-        $suffix = preg_replace_callback('/[a-f]/', function () {
-            // Replace with a random uppercase letter from A-Z.
-            return chr(random_int(65, 90));
-        }, $suffix);
-        $candidate = 'BODH2026-' . strtoupper($suffix);
-
-        $check = $pdo->prepare(
-            'SELECT id FROM users WHERE unique_registration_id = :rid LIMIT 1'
-        );
-        $check->execute([':rid' => $candidate]);
-
-        if (!$check->fetch()) {
-            $regId = $candidate;
-            break;
-        }
-    }
-
-    if ($regId === '') {
-        // Astronomically unlikely, but handle gracefully.
-        error_log('[BodhantraOS][Register] Failed to generate unique reg ID after ' . $maxAttempts . ' attempts.');
-        jsonResponse(500, [
-            'success' => false,
-            'error'   => 'Unable to generate a unique registration ID. Please try again.',
-        ]);
-    }
-
-    // -----------------------------------------------------------------------
-    // 5. Temporary Password Generation
-    //    16 characters, mixed-case alpha-numeric — strong enough for initial
-    //    access.  The user should change this on first login.
-    // -----------------------------------------------------------------------
-    $tempPassword = substr(str_replace(
-        ['+', '/', '='],
-        '',
-        base64_encode(random_bytes(16))
-    ), 0, 16);
-
-    // Hash with bcrypt at cost 12 — balances security vs. shared hosting CPU.
+    $tempPassword = $phone;
     $passwordHash = password_hash($tempPassword, PASSWORD_BCRYPT, ['cost' => 12]);
 
     if ($passwordHash === false) {
@@ -198,41 +145,54 @@ function handleRegistration(array $ctx): void
     }
 
     // -----------------------------------------------------------------------
-    // 6. Insert Into Database
+    // 5. Insert Into Database (Inside Transaction for ID Gen lock safety)
     // -----------------------------------------------------------------------
-    $insert = $pdo->prepare(
-        'INSERT INTO users (name, email, phone, branch, academic_year, unique_registration_id, password_hash, role_tier, is_active, created_at, updated_at)
-         VALUES (:name, :email, :phone, :branch, :year, :reg_id, :pass_hash, :role, 1, NOW(), NOW())'
-    );
+    require_once dirname(__DIR__) . '/utils/id_generator.php';
+    
+    $pdo->beginTransaction();
+    try {
+        // Generate sequential prefixed ID (MAV-ADM-XXX or MAV-MEM-XXX)
+        $regId = generateAccountId($pdo, $role);
 
-    $insert->execute([
-        ':name'      => $name,
-        ':email'     => $email,
-        ':phone'     => $phone,
-        ':branch'    => $branch,
-        ':year'      => $academicYear,
-        ':reg_id'    => $regId,
-        ':pass_hash' => $passwordHash,
-        ':role'      => 'Participant',
-    ]);
+        $insert = $pdo->prepare(
+            'INSERT INTO users (name, email, phone, branch, academic_year, unique_registration_id, password_hash, role_tier, is_active, created_at, updated_at)
+             VALUES (:name, :email, :phone, :branch, :year, :reg_id, :pass_hash, :role, 1, NOW(), NOW())'
+        );
 
-    $newUserId = (int)$pdo->lastInsertId();
+        $insert->execute([
+            ':name'      => $name,
+            ':email'     => $email,
+            ':phone'     => $phone,
+            ':branch'    => $branch,
+            ':year'      => $academicYear,
+            ':reg_id'    => $regId,
+            ':pass_hash' => $passwordHash,
+            ':role'      => $role,
+        ]);
+
+        $newUserId = (int)$pdo->lastInsertId();
+        $pdo->commit();
+    } catch (\Throwable $e) {
+        $pdo->rollBack();
+        error_log('[BodhantraOS][Register] Transaction failed: ' . $e->getMessage());
+        jsonResponse(500, [
+            'success' => false,
+            'error'   => 'Registration failed due to database transaction failure.',
+        ]);
+    }
 
     // -----------------------------------------------------------------------
-    // 7. Audit Log
+    // 6. Audit Log
     // -----------------------------------------------------------------------
     writeAuditLog(
         $newUserId,
-        "New participant registered: {$email} ({$regId})",
+        "New {$role} registered: {$email} ({$regId})",
         '/api/register',
         $ctx['ip']
     );
 
     // -----------------------------------------------------------------------
-    // 8. Respond with credentials and tracking code.
-    //    The temporary password is returned ONLY in this response.
-    //    It is the client's responsibility to display it clearly and instruct
-    //    the user to save it.
+    // 7. Respond with credentials
     // -----------------------------------------------------------------------
     jsonResponse(201, [
         'success'            => true,
@@ -247,7 +207,7 @@ function handleRegistration(array $ctx): void
             'branch'                 => $branch,
             'academic_year'          => $academicYear,
             'unique_registration_id' => $regId,
-            'role_tier'              => 'Participant',
+            'role_tier'              => $role,
         ],
     ]);
 }

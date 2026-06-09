@@ -253,7 +253,7 @@ function handleGetTemplate(array $ctx): void
     }
 
     // Decode elements list back into array elements
-    $template['elements_json'] = typeof($template['elements_json']) === 'string'
+    $template['elements_json'] = is_string($template['elements_json'])
         ? json_decode($template['elements_json'], true)
         : $template['elements_json'];
 
@@ -283,11 +283,11 @@ function handleVerifyCertificate(array $ctx): void
     $pdo = Database::connect();
 
     $stmt = $pdo->prepare(
-        "SELECT u.name, u.branch, u.unique_registration_id, r.status, e.title AS event_title, e.event_date
-         FROM users u
-         INNER JOIN registrations r ON r.user_id = u.id
-         INNER JOIN events e        ON e.id = r.event_id
-         WHERE u.unique_registration_id = :code AND r.status = 'Approved'
+        "SELECT u.name, u.branch, er.participant_id, er.status, e.title AS event_title, e.event_date
+         FROM event_registrations er
+         INNER JOIN users u ON u.id = er.user_id
+         INNER JOIN events e ON e.id = er.event_id
+         WHERE er.participant_id = :code AND er.status = 'Approved'
          LIMIT 1"
     );
     $stmt->execute([':code' => $code]);
@@ -305,7 +305,7 @@ function handleVerifyCertificate(array $ctx): void
         'verified'     => true,
         'holder_name'  => $verified['name'],
         'department'   => $verified['branch'],
-        'registration' => $verified['unique_registration_id'],
+        'registration' => $verified['participant_id'],
         'event'        => $verified['event_title'],
         'event_date'   => $verified['event_date'],
         'message'      => 'Authentic certificate verified.'

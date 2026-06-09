@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import api from '../api/client';
+import PublicNavbar from '../components/PublicNavbar';
 
 /**
  * ============================================================================
@@ -12,18 +13,15 @@ import api from '../api/client';
  * and temporary password.
  */
 
-const ACADEMIC_YEARS = ['FY', 'SY', 'TY', 'Final', 'PG-1', 'PG-2', 'PhD'];
 
-const BRANCHES = [
-  'Computer Science', 'Information Technology', 'Electronics',
-  'Electrical', 'Mechanical', 'Civil', 'Chemical', 'Biotechnology',
-  'Data Science', 'AI & ML', 'Humanities', 'Commerce', 'Other',
-];
 
 export default function Register() {
+  const location = useLocation();
+  const from = location.state?.from || '/dashboard';
+
   // ── Form State ──────────────────────────────────────────────────────
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', branch: '', academic_year: '',
+    name: '', email: '', phone: '', role_tier: '',
   });
   const [errors, setErrors]           = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,8 +38,7 @@ export default function Register() {
     if (!form.name.trim())          errs.push('Name is required.');
     if (!form.email.trim())         errs.push('Email is required.');
     if (!form.phone.trim())         errs.push('Phone number is required.');
-    if (!form.branch)               errs.push('Branch is required.');
-    if (!form.academic_year)        errs.push('Academic year is required.');
+    if (!form.role_tier)            errs.push('Role tier selection is required.');
     return errs;
   };
 
@@ -59,11 +56,10 @@ export default function Register() {
     setIsSubmitting(true);
 
     const { data, ok } = await api.post('/register', {
-      name:          form.name.trim(),
-      email:         form.email.trim(),
-      phone:         form.phone.trim(),
-      branch:        form.branch,
-      academic_year: form.academic_year,
+      name:      form.name.trim(),
+      email:     form.email.trim(),
+      phone:     form.phone.trim(),
+      role_tier: form.role_tier,
     });
 
     setIsSubmitting(false);
@@ -80,8 +76,10 @@ export default function Register() {
   // =====================================================================
   if (result) {
     return (
-      <div className="min-h-screen bg-surface-900 bg-mesh bg-dots flex items-center justify-center p-4">
-        <div className="w-full max-w-lg animate-slide-up">
+      <div className="min-h-screen bg-mesh bg-dots flex flex-col" style={{ backgroundColor: 'var(--bg-primary)' }}>
+        <PublicNavbar />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg animate-slide-up">
           <div className="glass-card p-8 text-center">
             {/* Success Icon */}
             <div className="inline-flex items-center justify-center w-20 h-20 rounded-full
@@ -102,7 +100,7 @@ export default function Register() {
             {/* ── Credentials Card ──────────────────────────────────── */}
             <div className="bg-gradient-to-br from-brand-950/80 to-violet-950/80
                             border border-brand-500/20 rounded-2xl p-6 mb-6
-                            shadow-glow-sm text-left space-y-4">
+                            shadow-glow-sm text-left space-y-4 dark-zone">
               {/* Registration ID */}
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-400 mb-1">
@@ -118,13 +116,13 @@ export default function Register() {
 
               {/* Temporary Password */}
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400 mb-1">
-                  Temporary Password
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400 mb-1">
+                  Account Password
                 </p>
-                <p className="text-lg font-mono font-bold text-amber-300 tracking-wider
-                              bg-amber-500/10 rounded-lg px-3 py-2 border border-amber-500/20"
+                <p className="text-lg font-mono font-bold text-emerald-300 tracking-wider
+                              bg-emerald-500/10 rounded-lg px-3 py-2 border border-emerald-500/20"
                    id="temp-password-display">
-                  {result.temporary_password}
+                  {result.temporary_password} (Your Mobile Number)
                 </p>
               </div>
 
@@ -142,28 +140,30 @@ export default function Register() {
             </div>
 
             {/* Warning */}
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3
-                            text-amber-400 text-xs font-medium mb-6 text-left">
-              <strong>⚠️ Important:</strong> Save your registration ID and temporary password
-              now. The password will not be shown again.
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3
+                            text-emerald-400 text-xs font-medium mb-6 text-left">
+              <strong>💡 Sign-In Tip:</strong> Use your sequential ID <strong>{result.registration_id}</strong> and your <strong>mobile number</strong> to log in.
             </div>
 
             {/* CTA */}
-            <Link to="/login" className="btn-primary w-full">
+            <Link to="/login" state={{ from }} className="btn-primary w-full">
               Proceed to Login →
             </Link>
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // =====================================================================
   // REGISTRATION FORM VIEW
   // =====================================================================
   return (
-    <div className="min-h-screen bg-surface-900 bg-mesh bg-dots flex items-center justify-center p-4">
-      <div className="w-full max-w-lg animate-slide-up">
+    <div className="min-h-screen bg-mesh bg-dots flex flex-col" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <PublicNavbar />
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-lg animate-slide-up">
         {/* ── Header ───────────────────────────────────────────────── */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl
@@ -230,33 +230,19 @@ export default function Register() {
                      className="input-field" disabled={isSubmitting} required />
             </div>
 
-            {/* Branch + Year (side by side) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="reg-branch" className="block text-xs font-semibold text-slate-400
-                                                        uppercase tracking-wider mb-2">
-                  Branch / Dept
-                </label>
-                <select id="reg-branch" name="branch" value={form.branch}
-                        onChange={handleChange} className="input-field"
-                        disabled={isSubmitting} required>
-                  <option value="">Select branch</option>
-                  {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="reg-year" className="block text-xs font-semibold text-slate-400
-                                                      uppercase tracking-wider mb-2">
-                  Academic Year
-                </label>
-                <select id="reg-year" name="academic_year" value={form.academic_year}
-                        onChange={handleChange} className="input-field"
-                        disabled={isSubmitting} required>
-                  <option value="">Select year</option>
-                  {ACADEMIC_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
+            {/* Role Select */}
+            <div>
+              <label htmlFor="reg-role" className="block text-xs font-semibold text-slate-400
+                                                    uppercase tracking-wider mb-2">
+                Account Role Tier
+              </label>
+              <select id="reg-role" name="role_tier" value={form.role_tier}
+                      onChange={handleChange} className="input-field"
+                      disabled={isSubmitting} required>
+                <option value="">Select Role...</option>
+                <option value="Admin">Admin (Symposium Architect)</option>
+                <option value="Member">Member (Symposium Staff)</option>
+              </select>
             </div>
 
             {/* Submit */}
@@ -282,12 +268,12 @@ export default function Register() {
           <div className="mt-6 pt-6 border-t border-white/[0.06] text-center">
             <p className="text-sm text-slate-500">
               Already have an account?{' '}
-              <Link to="/login" className="text-brand-400 hover:text-brand-300
-                                          font-semibold transition-colors duration-200">
+              <Link to="/login" state={{ from }} className="text-brand-400 hover:text-brand-300 font-semibold transition-colors duration-200">
                 Sign in
               </Link>
             </p>
           </div>
+        </div>
         </div>
       </div>
     </div>

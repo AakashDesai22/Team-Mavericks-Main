@@ -61,6 +61,20 @@ export default function CertificateDesigner() {
 
   const canvasRef = useRef(null);
   const dragInfoRef = useRef(null); // Tracks mouse dragging session states
+  const [canvasWidth, setCanvasWidth] = useState(1123); // Standard A4 base width at 96 DPI
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        if (entry.contentRect.width) {
+          setCanvasWidth(entry.contentRect.width);
+        }
+      }
+    });
+    observer.observe(canvasRef.current);
+    return () => observer.disconnect();
+  }, [bgUrl]);
 
   // Load events
   useEffect(() => {
@@ -414,6 +428,8 @@ export default function CertificateDesigner() {
                 {elements.map((el) => {
                   const isSelected = selectedElementId === el.id;
                   const isQR = el.type === 'qr';
+                  const scale = canvasWidth / 1123;
+                  const previewSize = Math.max(8, el.font_size * scale);
 
                   return (
                     <div
@@ -428,7 +444,7 @@ export default function CertificateDesigner() {
                         left: `${el.x_pct}%`,
                         top: `${el.y_pct}%`,
                         transform: `translate(${el.text_align === 'center' ? '-50%' : el.text_align === 'right' ? '-100%' : '0'}, -50%)`,
-                        fontSize: `${el.font_size * 0.95}px`, // Proportional scale preview
+                        fontSize: `${previewSize}px`,
                         fontWeight: el.font_weight,
                         fontFamily: el.font_family,
                         color: isQR ? '#0f172a' : el.color,
@@ -436,10 +452,26 @@ export default function CertificateDesigner() {
                       }}
                     >
                       {isQR ? (
-                        <div className="bg-white p-2 border border-slate-200 flex flex-col items-center justify-center gap-1 shadow-inner relative group select-none shrink-0" style={{ width: '80px', height: '80px' }}>
+                        <div 
+                          className="bg-white border border-slate-200 flex flex-col items-center justify-center shadow-inner relative group select-none shrink-0 rounded" 
+                          style={{ 
+                            width: `${110 * scale}px`, 
+                            height: `${110 * scale}px`,
+                            padding: `${8 * scale}px` 
+                          }}
+                        >
                           {/* Simulated QR blocks */}
-                          <div className="w-14 h-14 bg-slate-900 rounded flex items-center justify-center text-[6px] font-black text-white uppercase tracking-tighter">QR CODE</div>
-                          <span className="text-[6px] font-bold text-slate-400 tracking-wider">VERIFY CERT</span>
+                          <div 
+                            className="bg-slate-900 rounded flex items-center justify-center font-black text-white uppercase tracking-tighter"
+                            style={{
+                              width: `${75 * scale}px`,
+                              height: `${75 * scale}px`,
+                              fontSize: `${6 * scale}px`
+                            }}
+                          >
+                            QR CODE
+                          </div>
+                          <span style={{ fontSize: `${5 * scale}px`, marginTop: `${2 * scale}px` }} className="font-bold text-slate-400 tracking-wider">VERIFY CERT</span>
                         </div>
                       ) : (
                         <span>{el.label}</span>

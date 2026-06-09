@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import PublicNavbar from '../components/PublicNavbar';
 
 /**
  * ============================================================================
@@ -20,7 +21,10 @@ export default function Login() {
   const location   = useLocation();
 
   // Where to redirect after successful login.
-  const from = location.state?.from?.pathname || '/dashboard';
+  const fromState = location.state?.from;
+  const from = typeof fromState === 'object' && fromState !== null && fromState.pathname
+    ? fromState.pathname + (fromState.search || '') + (fromState.hash || '')
+    : (typeof fromState === 'string' ? fromState : '/dashboard');
 
   // ── Form State ──────────────────────────────────────────────────────
   const [email, setEmail]       = useState('');
@@ -53,8 +57,10 @@ export default function Login() {
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-surface-900 bg-mesh bg-dots flex items-center justify-center p-4">
-      <div className="w-full max-w-md animate-slide-up">
+    <div className="min-h-screen bg-mesh bg-dots flex flex-col" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <PublicNavbar />
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-md animate-slide-up">
         {/* ── Logo Block ───────────────────────────────────────────── */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl
@@ -180,8 +186,7 @@ export default function Login() {
           <div className="mt-6 pt-6 border-t border-white/[0.06] text-center">
             <p className="text-sm text-slate-500">
               Don't have an account?{' '}
-              <Link to="/register" className="text-brand-400 hover:text-brand-300
-                                              font-semibold transition-colors duration-200">
+              <Link to="/register" state={{ from }} className="text-brand-400 hover:text-brand-300 font-semibold transition-colors duration-200">
                 Register here
               </Link>
             </p>
@@ -192,6 +197,7 @@ export default function Login() {
         <p className="text-center text-xs text-slate-600 mt-6">
           Bodhantra Event OS &middot; Secured by Three-Tier RBAC
         </p>
+        </div>
       </div>
     </div>
   );

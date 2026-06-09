@@ -27,6 +27,37 @@
 declare(strict_types=1);
 
 // ---------------------------------------------------------------------------
+// Load .env file if it exists in the project root (local development)
+// ---------------------------------------------------------------------------
+(function () {
+    $envPath = dirname(__DIR__, 2) . '/.env';
+    if (!file_exists($envPath)) {
+        return;
+    }
+    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || strpos($line, '#') === 0) {
+            continue;
+        }
+        $parts = explode('=', $line, 2);
+        if (count($parts) === 2) {
+            $name = trim($parts[0]);
+            $value = trim($parts[1]);
+            // Strip wrapping quotes if any
+            if (preg_match('/^"(.+)"$/', $value, $matches) || preg_match('/^\'(.+)\'$/', $value, $matches)) {
+                $value = $matches[1];
+            }
+            if (getenv($name) === false) {
+                putenv("{$name}={$value}");
+                $_ENV[$name] = $value;
+                $_SERVER[$name] = $value;
+            }
+        }
+    }
+})();
+
+// ---------------------------------------------------------------------------
 // Configuration — In production, these values MUST be moved to environment
 // variables or a file outside the web root.  The .htaccess rules already
 // block direct HTTP access to this file, but belt-and-suspenders is the
@@ -143,7 +174,7 @@ class Database
                 // dates, and division-by-zero at write time instead of
                 // silently corrupting data.
                 self::$instance->exec(
-                    "SET SESSION sql_mode = 'STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION'"
+                    "SET SESSION sql_mode = 'STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'"
                 );
             } catch (\PDOException $e) {
                 // In production, NEVER expose the raw PDOException message

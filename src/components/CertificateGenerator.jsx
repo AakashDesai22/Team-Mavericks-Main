@@ -28,7 +28,7 @@ const Icons = {
   )
 };
 
-export default function CertificateGenerator({ eventId, participant, teamName = '', role = '', eventTitle = '', eventDate = '' }) {
+export default function CertificateGenerator({ eventId, participant, participantId = '', teamName = '', role = '', eventTitle = '', eventDate = '' }) {
   const [template, setTemplate] = useState(null);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -132,8 +132,9 @@ export default function CertificateGenerator({ eventId, participant, teamName = 
     : template.elements_json;
 
   // Generate dynamic QR validation code link path
-  // Dynamic host verification path: maps to window.origin/verify.php
-  const verifyUrl = `${window.location.origin}/verify.php?id=${participant?.unique_registration_id || 'BODH2026-X8R9TQ'}`;
+  // Dynamic host verification path: maps to window.origin/api/verify.php
+  const trackingId = participantId || participant?.unique_registration_id || 'MAV-PRT-000';
+  const verifyUrl = `${window.location.origin}/api/verify.php?id=${trackingId}`;
 
   // Formatter mapping variables helpers
   const formatTextVariable = (rawLabel) => {
@@ -142,7 +143,7 @@ export default function CertificateGenerator({ eventId, participant, teamName = 
     
     // Replace dynamic slots
     text = text.replace('{name}', participant?.name || 'Attendee');
-    text = text.replace('{id}', participant?.unique_registration_id || 'BODH2026-X8R9TQ');
+    text = text.replace('{id}', trackingId);
     text = text.replace('{event}', eventTitle || 'Bodhantra Event');
     text = text.replace('{team}', teamName || 'COHORT ONE');
     text = text.replace('{role}', role || 'MEMBER');

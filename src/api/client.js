@@ -123,11 +123,13 @@ async function request(endpoint, options = {}) {
     // If the server returns 401 (token expired / invalid), immediately wipe
     // all stored credentials and redirect to login.
     // -----------------------------------------------------------------------
-    if (response.status === 401 && !endpoint.includes('/auth/login')) {
+    if (response.status === 401) {
       clearStorage();
-      // Use window.location instead of router navigation to guarantee a
-      // clean state reset (all React state is destroyed on full reload).
-      window.location.href = '/login';
+      if (!endpoint.includes('/auth/login') && !endpoint.includes('/auth/me')) {
+        // Use window.location instead of router navigation to guarantee a
+        // clean state reset (all React state is destroyed on full reload).
+        window.location.href = '/login';
+      }
       return { data: null, ok: false, status: 401 };
     }
 

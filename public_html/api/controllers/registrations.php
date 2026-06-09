@@ -54,7 +54,10 @@ function handleListRegistrations(array $ctx): void
     $statusFilter  = $ctx['query']['status']   ?? null;
     $eventIdFilter = $ctx['query']['event_id'] ?? null;
     $page          = max(1, (int)($ctx['query']['page']     ?? 1));
-    $perPage       = max(1, min(200, (int)($ctx['query']['per_page'] ?? 50)));
+    
+    // Support export mode by setting a very high page size cap.
+    $isExport      = isset($ctx['query']['export']) && $ctx['query']['export'] === 'true';
+    $perPage       = $isExport ? 50000 : max(1, min(200, (int)($ctx['query']['per_page'] ?? 50)));
     $offset        = ($page - 1) * $perPage;
 
     // -----------------------------------------------------------------------
@@ -74,14 +77,86 @@ function handleListRegistrations(array $ctx): void
         $params[':evt_filter'] = (int)$eventIdFilter;
     }
 
+    // 1. Text Search Query
+    $searchFilter = $ctx['query']['search'] ?? null;
+    if ($searchFilter !== null && trim($searchFilter) !== '') {
+        $conditions[] = '(u.name LIKE :search OR u.email LIKE :search OR u.phone LIKE :search OR u.unique_registration_id LIKE :search)';
+        $params[':search'] = '%' . trim($searchFilter) . '%';
+    }
+
+    // 2. Academic Branch Filter
+    $branchFilter = $ctx['query']['branch'] ?? null;
+    if ($branchFilter !== null && trim($branchFilter) !== '') {
+        $conditions[] = 'u.branch = :branch';
+        $params[':branch'] = trim($branchFilter);
+    }
+
+    // 3. Academic Year Filter
+    $yearFilter = $ctx['query']['academic_year'] ?? null;
+    if ($yearFilter !== null && trim($yearFilter) !== '') {
+        $conditions[] = 'u.academic_year = :year';
+        $params[':year'] = trim($yearFilter);
+    }
+
+    // 4. Date Range Filters
+    $startDate = $ctx['query']['start_date'] ?? null;
+    if ($startDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+        $conditions[] = 'r.created_at >= :start_date';
+        $params[':start_date'] = $startDate . ' 00:00:00';
+    }
+
+    $endDate = $ctx['query']['end_date'] ?? null;
+    if ($endDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+        $conditions[] = 'r.created_at <= :end_date';
+        $params[':end_date'] = $endDate . ' 23:59:59';
+    }
+
+    // 5. Payment/Voucher Status Mode
+    $paymentMode = $ctx['query']['payment_mode'] ?? null;
+    if ($paymentMode === 'paid') {
+        $conditions[] = "(r.voucher_path IS NOT NULL AND r.voucher_path != '')";
+    } elseif ($paymentMode === 'free') {
+        $conditions[] = "(r.voucher_path IS NULL OR r.voucher_path = '')";
+    }
+
+    // 5b. Registration Mode (Event's payment type: Online, Offline, Free)
+    $regMode = $ctx['query']['registration_mode'] ?? null;
+    if ($regMode !== null && in_array($regMode, ['Online', 'Offline', 'Free'], true)) {
+        $conditions[] = 'e.payment_type = :reg_mode';
+        $params[':reg_mode'] = $regMode;
+    }
+
+    // 6. Dynamic Event Form JSON Field Filters
+    $formFiltersJson = $ctx['query']['form_filters'] ?? null;
+    if ($formFiltersJson !== null && trim($formFiltersJson) !== '') {
+        $formFilters = json_decode($formFiltersJson, true);
+        if (is_array($formFilters)) {
+            $i = 0;
+            foreach ($formFilters as $field => $value) {
+                if (trim((string)$value) !== '') {
+                    $fieldSanitized = preg_replace('/[^a-zA-Z0-9_\-]/', '', $field);
+                    if ($fieldSanitized !== '') {
+                        $paramName = ":form_val_" . $i;
+                        $conditions[] = "JSON_UNQUOTE(JSON_EXTRACT(er.form_data_json, '$.\"" . $fieldSanitized . "\"')) LIKE " . $paramName;
+                        $params[$paramName] = '%' . trim((string)$value) . '%';
+                        $i++;
+                    }
+                }
+            }
+        }
+    }
+
     $where = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
     // -----------------------------------------------------------------------
-    // Count total for pagination.
+    // Count total for pagination (including joins to support search and custom filters).
     // -----------------------------------------------------------------------
     $countStmt = $pdo->prepare(
         "SELECT COUNT(*) AS total
          FROM registrations r
+         INNER JOIN users u ON u.id = r.user_id
+         INNER JOIN events e ON e.id = r.event_id
+         LEFT JOIN event_registrations er ON er.user_id = r.user_id AND er.event_id = r.event_id
          {$where}"
     );
     $countStmt->execute($params);
@@ -101,16 +176,19 @@ function handleListRegistrations(array $ctx): void
                    r.event_id,
                    e.title AS event_title,
                    e.event_date,
+                   e.payment_type AS registration_mode,
                    r.status,
                    r.voucher_path,
                    r.checked_in_state,
                    r.checked_in_at,
                    r.rejection_reason,
                    r.created_at AS registered_at,
-                   r.updated_at
+                   r.updated_at,
+                   er.form_data_json
             FROM registrations r
             INNER JOIN users u  ON u.id = r.user_id
             INNER JOIN events e ON e.id = r.event_id
+            LEFT JOIN event_registrations er ON er.user_id = r.user_id AND er.event_id = r.event_id
             {$where}
             ORDER BY
                 CASE r.status
@@ -131,7 +209,7 @@ function handleListRegistrations(array $ctx): void
     $registrations = $dataStmt->fetchAll();
 
     // -----------------------------------------------------------------------
-    // Aggregate summary for the toolbar.
+    // Aggregate summary for the toolbar tabs.
     // -----------------------------------------------------------------------
     $summSql = "SELECT
                     COUNT(*)                                                          AS total_all,
@@ -150,10 +228,81 @@ function handleListRegistrations(array $ctx): void
     }
     $summary = $summStmt->fetch();
 
+    // -----------------------------------------------------------------------
+    // Aggregate Analytics for Charts (Branch and Academic Year distributions)
+    // -----------------------------------------------------------------------
+    $analyticsParams = [];
+    $analyticsConditions = [];
+    if ($eventIdFilter !== null && (int)$eventIdFilter > 0) {
+        $analyticsConditions[] = 'r.event_id = :evt_id';
+        $analyticsParams[':evt_id'] = (int)$eventIdFilter;
+    }
+    if ($statusFilter !== null && in_array($statusFilter, $validStatuses, true)) {
+        $analyticsConditions[] = 'r.status = :status';
+        $analyticsParams[':status'] = $statusFilter;
+    }
+    $analyticsWhere = !empty($analyticsConditions) ? 'WHERE ' . implode(' AND ', $analyticsConditions) : '';
+
+    $branchDistribution = [];
+    try {
+        $branchStmt = $pdo->prepare(
+            "SELECT u.branch, COUNT(*) AS count
+             FROM registrations r
+             INNER JOIN users u ON u.id = r.user_id
+             {$analyticsWhere}
+             GROUP BY u.branch
+             ORDER BY count DESC"
+        );
+        $branchStmt->execute($analyticsParams);
+        $branchDistribution = $branchStmt->fetchAll(\PDO::FETCH_KEY_PAIR);
+    } catch (\Throwable $e) {
+        error_log('[BodhantraOS][Registrations] Branch analytics failed: ' . $e->getMessage());
+    }
+
+    $yearDistribution = [];
+    try {
+        $yearStmt = $pdo->prepare(
+            "SELECT u.academic_year, COUNT(*) AS count
+             FROM registrations r
+             INNER JOIN users u ON u.id = r.user_id
+             {$analyticsWhere}
+             GROUP BY u.academic_year
+             ORDER BY count DESC"
+        );
+        $yearStmt->execute($analyticsParams);
+        $yearDistribution = $yearStmt->fetchAll(\PDO::FETCH_KEY_PAIR);
+    } catch (\Throwable $e) {
+        error_log('[BodhantraOS][Registrations] Year analytics failed: ' . $e->getMessage());
+    }
+
+    $dayDistribution = [];
+    try {
+        $dayStmt = $pdo->prepare(
+            "SELECT DATE_FORMAT(r.created_at, '%Y-%m-%d') AS reg_date, COUNT(*) AS count
+             FROM registrations r
+             INNER JOIN users u ON u.id = r.user_id
+             INNER JOIN events e ON e.id = r.event_id
+             LEFT JOIN event_registrations er ON er.user_id = r.user_id AND er.event_id = r.event_id
+             {$where}
+             GROUP BY DATE(r.created_at)
+             ORDER BY reg_date ASC
+             LIMIT 50"
+        );
+        $dayStmt->execute($params);
+        $dayDistribution = $dayStmt->fetchAll(\PDO::FETCH_KEY_PAIR);
+    } catch (\Throwable $e) {
+        error_log('[BodhantraOS][Registrations] Day analytics failed: ' . $e->getMessage());
+    }
+
     jsonResponse(200, [
         'success'       => true,
         'registrations' => $registrations,
         'summary'       => $summary,
+        'analytics'     => [
+            'branch_distribution' => $branchDistribution,
+            'year_distribution'   => $yearDistribution,
+            'day_distribution'    => $dayDistribution,
+        ],
         'pagination'    => [
             'page'     => $page,
             'per_page' => $perPage,
@@ -242,6 +391,17 @@ function handleApproveRegistration(array $ctx): void
             ':rid'    => $regId,
         ]);
 
+        $updateEvt = $pdo->prepare(
+            'UPDATE event_registrations
+             SET status = :status, rejection_reason = NULL, updated_at = NOW()
+             WHERE user_id = :uid AND event_id = :eid'
+        );
+        $updateEvt->execute([
+            ':status' => 'Approved',
+            ':uid'    => $reg['user_id'],
+            ':eid'    => $reg['event_id'],
+        ]);
+
         // -----------------------------------------------------------------
         // 3. Insert a placeholder allocation row for this user+event.
         //    The actual team, role, and seat coordinates will be filled
@@ -266,11 +426,12 @@ function handleApproveRegistration(array $ctx): void
                      row_coordinate, column_coordinate, reveal_state, allocated_at)
                  VALUES
                     (:uid, :eid, '__UNASSIGNED__', '__PENDING__',
-                     '0', '0', 'Unrevealed', NOW())"
+                     '0', :col_coord, 'Unrevealed', NOW())"
             );
             $insertAlloc->execute([
-                ':uid' => $reg['user_id'],
-                ':eid' => $reg['event_id'],
+                ':uid'       => $reg['user_id'],
+                ':eid'       => $reg['event_id'],
+                ':col_coord' => (string)$reg['user_id'],
             ]);
         }
 
@@ -386,6 +547,20 @@ function handleRejectRegistration(array $ctx): void
             ':status' => 'Rejected',
             ':reason' => $reason !== '' ? mb_substr($reason, 0, 500) : null,
             ':rid'    => $regId,
+        ]);
+
+        $updateEvt = $pdo->prepare(
+            'UPDATE event_registrations
+             SET status = :status,
+                 rejection_reason = :reason,
+                 updated_at = NOW()
+             WHERE user_id = :uid AND event_id = :eid'
+        );
+        $updateEvt->execute([
+            ':status' => 'Rejected',
+            ':reason' => $reason !== '' ? mb_substr($reason, 0, 500) : null,
+            ':uid'    => $reg['user_id'],
+            ':eid'    => $reg['event_id'],
         ]);
 
         // Clean up any allocation placeholder if reverting from Approved.

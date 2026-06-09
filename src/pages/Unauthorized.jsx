@@ -9,7 +9,7 @@ export default function Unauthorized() {
   const { roleTier } = useAuth();
 
   return (
-    <div className="min-h-screen bg-surface-900 bg-mesh flex items-center justify-center p-4">
+    <div className="min-h-screen bg-mesh flex items-center justify-center p-4" style={{ backgroundColor: 'var(--bg-primary)' }}>
       <div className="text-center animate-slide-up max-w-md">
         {/* Shield Icon */}
         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full

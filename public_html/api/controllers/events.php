@@ -39,8 +39,8 @@ require_once __DIR__ . '/_middleware.php';
  */
 function handleListEvents(array $ctx): void
 {
-    // Any authenticated user may list events.
-    $user = requireAuth($ctx);
+    // Optional Auth: if token is present, resolve session. Guests are allowed.
+    $user = resolveSession($ctx['token'] ?? null);
 
     $pdo = Database::connect();
 
@@ -63,12 +63,9 @@ function handleListEvents(array $ctx): void
         $params[':status'] = $statusFilter;
     }
 
-    // For Participants, only show Active events (not Draft or Archived).
-    if ($user['role_tier'] === 'Participant' && $where === '') {
+    // For Guests or Participants, only show Active events (not Draft or Archived).
+    if ($user === null || $user['role_tier'] === 'Participant') {
         $where = 'WHERE e.status = :status';
-        $params[':status'] = 'Active';
-    } elseif ($user['role_tier'] === 'Participant' && $where !== '') {
-        // If a Participant explicitly requested a non-Active status, override.
         $params[':status'] = 'Active';
     }
 
@@ -78,9 +75,10 @@ function handleListEvents(array $ctx): void
     $countStmt->execute($params);
     $total = (int)$countStmt->fetch()['total'];
 
-    // Fetch the page.
     $dataSql = "SELECT e.id, e.title, e.description, e.event_date, e.max_capacity,
-                       e.status, e.cover_image_path, e.created_by,
+                       e.status, e.cover_image_path, e.form_schema, e.num_days,
+                       e.sessions_per_day, e.payment_type, e.payment_amount,
+                       e.payment_context, e.payment_qr_path, e.require_payment_proof, e.finance_contacts, e.feedback_schema, e.created_by,
                        u.name AS created_by_name,
                        e.created_at, e.updated_at
                 FROM events e
@@ -155,7 +153,8 @@ function handleListEvents(array $ctx): void
  */
 function handleGetEvent(array $ctx): void
 {
-    $user    = requireAuth($ctx);
+    // Optional Auth: resolves session if token exists. Guests are allowed.
+    $user    = resolveSession($ctx['token'] ?? null);
     $eventId = (int)($ctx['params']['event_id'] ?? 0);
 
     if ($eventId <= 0) {
@@ -169,7 +168,9 @@ function handleGetEvent(array $ctx): void
 
     $stmt = $pdo->prepare(
         'SELECT e.id, e.title, e.description, e.event_date, e.max_capacity,
-                e.status, e.cover_image_path, e.created_by,
+                e.status, e.cover_image_path, e.form_schema, e.num_days,
+                e.sessions_per_day, e.payment_type, e.payment_amount,
+                e.payment_context, e.payment_qr_path, e.require_payment_proof, e.finance_contacts, e.feedback_schema, e.created_by,
                 u.name AS created_by_name,
                 e.created_at, e.updated_at
          FROM events e
@@ -187,18 +188,20 @@ function handleGetEvent(array $ctx): void
         ]);
     }
 
-    // Participants can only see Active events.
-    if ($user['role_tier'] === 'Participant' && $event['status'] !== 'Active') {
-        jsonResponse(404, [
-            'success' => false,
-            'error'   => 'Event not found.',
-        ]);
+    // Guest or Participant: block access to non-Active (Draft/Archived) events.
+    if ($event['status'] !== 'Active') {
+        if ($user === null || !in_array($user['role_tier'], ['Admin', 'Member'], true)) {
+            jsonResponse(403, [
+                'success' => false,
+                'error'   => 'Access denied. You do not have permission to view this event configuration.',
+            ]);
+        }
     }
 
     // -----------------------------------------------------------------------
     // Include registration stats for Admin/Member.
     // -----------------------------------------------------------------------
-    if (in_array($user['role_tier'], ['Admin', 'Member'], true)) {
+    if ($user !== null && in_array($user['role_tier'], ['Admin', 'Member'], true)) {
         $regStmt = $pdo->prepare(
             "SELECT COUNT(*) AS total_registrations,
                     SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END) AS approved_count,
@@ -226,17 +229,21 @@ function handleGetEvent(array $ctx): void
     // -----------------------------------------------------------------------
     // Include the current user's own registration state for this event.
     // -----------------------------------------------------------------------
-    $myRegStmt = $pdo->prepare(
-        'SELECT id AS registration_id, status, voucher_path, checked_in_state, created_at
-         FROM registrations
-         WHERE user_id = :uid AND event_id = :eid
-         LIMIT 1'
-    );
-    $myRegStmt->execute([
-        ':uid' => $user['id'],
-        ':eid' => $eventId,
-    ]);
-    $event['my_registration'] = $myRegStmt->fetch() ?: null;
+    if ($user !== null) {
+        $myRegStmt = $pdo->prepare(
+            'SELECT id AS registration_id, status, voucher_path, checked_in_state, created_at
+             FROM registrations
+             WHERE user_id = :uid AND event_id = :eid
+             LIMIT 1'
+        );
+        $myRegStmt->execute([
+            ':uid' => $user['id'],
+            ':eid' => $eventId,
+        ]);
+        $event['my_registration'] = $myRegStmt->fetch() ?: null;
+    } else {
+        $event['my_registration'] = null;
+    }
 
     jsonResponse(200, [
         'success' => true,
@@ -252,23 +259,14 @@ function handleGetEvent(array $ctx): void
 /**
  * Create a new event.
  *
- * RBAC: Admin, Member only.
- *
- * Request body:
- *   {
- *     "title":        "Day 3 — Cryptography Workshop",
- *     "description":  "...",
- *     "event_date":   "2026-07-15",
- *     "max_capacity": 120,
- *     "status":       "Draft"       // optional, defaults to Draft
- *   }
+ * RBAC: Admin only.
  */
 function handleCreateEvent(array $ctx): void
 {
     // -----------------------------------------------------------------------
-    // RBAC Gate: Participants cannot create events.
+    // RBAC Gate: Only Admins can create events.
     // -----------------------------------------------------------------------
-    $user = requireAuth($ctx, ['Admin', 'Member']);
+    $user = requireAuth($ctx, ['Admin']);
 
     $body = $ctx['body'];
 
@@ -280,6 +278,19 @@ function handleCreateEvent(array $ctx): void
     $eventDate   = trim($body['event_date']  ?? '');
     $maxCapacity = (int)($body['max_capacity'] ?? 0);
     $status      = trim($body['status']      ?? 'Draft');
+
+    // New configuration fields
+    $coverImagePath  = trim($body['cover_image_path'] ?? '');
+    $formSchema      = isset($body['form_schema']) ? (is_array($body['form_schema']) ? json_encode($body['form_schema']) : $body['form_schema']) : null;
+    $feedbackSchema  = isset($body['feedback_schema']) ? (is_array($body['feedback_schema']) ? json_encode($body['feedback_schema']) : $body['feedback_schema']) : null;
+    $numDays         = max(1, (int)($body['num_days'] ?? 1));
+    $sessionsPerDay  = max(1, (int)($body['sessions_per_day'] ?? 2));
+    $paymentType     = trim($body['payment_type'] ?? 'Free');
+    $paymentAmount   = (float)($body['payment_amount'] ?? 0.00);
+    $paymentContext  = trim($body['payment_context'] ?? '');
+    $paymentQrPath   = trim($body['payment_qr_path'] ?? '');
+    $requirePaymentProof = isset($body['require_payment_proof']) ? (int)$body['require_payment_proof'] : 1;
+    $financeContacts = isset($body['finance_contacts']) ? (is_array($body['finance_contacts']) ? json_encode($body['finance_contacts']) : $body['finance_contacts']) : null;
 
     $errors = [];
 
@@ -308,6 +319,15 @@ function handleCreateEvent(array $ctx): void
         $errors[] = 'Status must be one of: ' . implode(', ', $validStatuses) . '.';
     }
 
+    $validPaymentTypes = ['Free', 'Online', 'Offline'];
+    if (!in_array($paymentType, $validPaymentTypes, true)) {
+        $errors[] = 'Payment type must be one of: ' . implode(', ', $validPaymentTypes) . '.';
+    }
+
+    if ($paymentAmount < 0) {
+        $errors[] = 'Payment amount cannot be negative.';
+    }
+
     if (!empty($errors)) {
         jsonResponse(400, [
             'success' => false,
@@ -322,17 +342,34 @@ function handleCreateEvent(array $ctx): void
     $pdo = Database::connect();
 
     $stmt = $pdo->prepare(
-        'INSERT INTO events (title, description, event_date, max_capacity, status, created_by, created_at, updated_at)
-         VALUES (:title, :desc, :date, :cap, :status, :creator, NOW(), NOW())'
+        'INSERT INTO events (title, description, event_date, max_capacity, status, 
+                             cover_image_path, form_schema, feedback_schema, num_days, 
+                             sessions_per_day, payment_type, payment_amount, 
+                             payment_context, payment_qr_path, require_payment_proof, finance_contacts, created_by, created_at, updated_at)
+         VALUES (:title, :desc, :date, :cap, :status, 
+                 :cover, :form_schema, :feedback_schema, :num_days, 
+                 :sessions_per_day, :payment_type, :payment_amount, 
+                 :payment_context, :payment_qr_path, :require_payment_proof, :finance_contacts, :creator, NOW(), NOW())'
     );
 
     $stmt->execute([
-        ':title'   => $title,
-        ':desc'    => $description !== '' ? $description : null,
-        ':date'    => $eventDate !== '' ? $eventDate : null,
-        ':cap'     => $maxCapacity,
-        ':status'  => $status,
-        ':creator' => $user['id'],
+        ':title'            => $title,
+        ':desc'             => $description !== '' ? $description : null,
+        ':date'             => $eventDate !== '' ? $eventDate : null,
+        ':cap'              => $maxCapacity,
+        ':status'           => $status,
+        ':cover'            => $coverImagePath !== '' ? $coverImagePath : null,
+        ':form_schema'      => $formSchema,
+        ':feedback_schema'  => $feedbackSchema,
+        ':num_days'         => $numDays,
+        ':sessions_per_day' => $sessionsPerDay,
+        ':payment_type'     => $paymentType,
+        ':payment_amount'   => $paymentAmount,
+        ':payment_context'  => $paymentContext !== '' ? $paymentContext : null,
+        ':payment_qr_path'  => $paymentQrPath !== '' ? $paymentQrPath : null,
+        ':require_payment_proof' => $requirePaymentProof,
+        ':finance_contacts' => $financeContacts,
+        ':creator'          => $user['id'],
     ]);
 
     $newId = (int)$pdo->lastInsertId();
@@ -368,12 +405,12 @@ function handleCreateEvent(array $ctx): void
 /**
  * Update an existing event.
  *
- * RBAC: Admin, Member only.
+ * RBAC: Admin only.
  * Only the fields provided in the body are updated (partial update).
  */
 function handleUpdateEvent(array $ctx): void
 {
-    $user    = requireAuth($ctx, ['Admin', 'Member']);
+    $user    = requireAuth($ctx, ['Admin']);
     $eventId = (int)($ctx['params']['event_id'] ?? 0);
 
     if ($eventId <= 0) {
@@ -469,6 +506,69 @@ function handleUpdateEvent(array $ctx): void
         }
         $updateFields[] = 'status = :status';
         $params[':status'] = $status;
+    }
+
+    if (isset($body['cover_image_path'])) {
+        $updateFields[] = 'cover_image_path = :cover';
+        $params[':cover'] = trim($body['cover_image_path']) !== '' ? trim($body['cover_image_path']) : null;
+    }
+
+    if (isset($body['form_schema'])) {
+        $updateFields[] = 'form_schema = :form_schema';
+        $params[':form_schema'] = is_array($body['form_schema']) ? json_encode($body['form_schema']) : $body['form_schema'];
+    }
+
+    if (isset($body['feedback_schema'])) {
+        $updateFields[] = 'feedback_schema = :feedback_schema';
+        $params[':feedback_schema'] = is_array($body['feedback_schema']) ? json_encode($body['feedback_schema']) : $body['feedback_schema'];
+    }
+
+    if (isset($body['num_days'])) {
+        $updateFields[] = 'num_days = :num_days';
+        $params[':num_days'] = max(1, (int)$body['num_days']);
+    }
+
+    if (isset($body['sessions_per_day'])) {
+        $updateFields[] = 'sessions_per_day = :sessions_per_day';
+        $params[':sessions_per_day'] = max(1, (int)$body['sessions_per_day']);
+    }
+
+    if (isset($body['payment_type'])) {
+        $pt = trim($body['payment_type']);
+        if (!in_array($pt, ['Free', 'Online', 'Offline'], true)) {
+            jsonResponse(400, ['success' => false, 'error' => 'Invalid payment type.']);
+        }
+        $updateFields[] = 'payment_type = :payment_type';
+        $params[':payment_type'] = $pt;
+    }
+
+    if (isset($body['payment_amount'])) {
+        $pa = (float)$body['payment_amount'];
+        if ($pa < 0) {
+            jsonResponse(400, ['success' => false, 'error' => 'Payment amount cannot be negative.']);
+        }
+        $updateFields[] = 'payment_amount = :payment_amount';
+        $params[':payment_amount'] = $pa;
+    }
+
+    if (isset($body['payment_context'])) {
+        $updateFields[] = 'payment_context = :payment_context';
+        $params[':payment_context'] = trim($body['payment_context']) !== '' ? trim($body['payment_context']) : null;
+    }
+
+    if (isset($body['payment_qr_path'])) {
+        $updateFields[] = 'payment_qr_path = :payment_qr_path';
+        $params[':payment_qr_path'] = trim($body['payment_qr_path']) !== '' ? trim($body['payment_qr_path']) : null;
+    }
+
+    if (isset($body['require_payment_proof'])) {
+        $updateFields[] = 'require_payment_proof = :require_payment_proof';
+        $params[':require_payment_proof'] = (int)$body['require_payment_proof'];
+    }
+
+    if (isset($body['finance_contacts'])) {
+        $updateFields[] = 'finance_contacts = :finance_contacts';
+        $params[':finance_contacts'] = is_array($body['finance_contacts']) ? json_encode($body['finance_contacts']) : $body['finance_contacts'];
     }
 
     if (empty($updateFields)) {

@@ -21,8 +21,9 @@ jobs:
       - name: Install dependencies and build
         run: |
           npm install
-          # Explicitly bypass local file execution restrictions by using npx
-          npx vite build
+          # Force fix the permission denial by granting execute rights to the local binaries
+          chmod +x node_modules/.bin/vite
+          npm run build
 
       - name: Deploy to Hostinger Subdomain
         uses: appleboy/scp-action@master

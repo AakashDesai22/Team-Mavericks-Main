@@ -27,35 +27,9 @@
 declare(strict_types=1);
 
 // ---------------------------------------------------------------------------
-// Load .env file if it exists in the project root (local development)
+// Load Central Environment Loader & Configurator
 // ---------------------------------------------------------------------------
-(function () {
-    $envPath = dirname(__DIR__, 2) . '/.env';
-    if (!file_exists($envPath)) {
-        return;
-    }
-    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        $line = trim($line);
-        if ($line === '' || strpos($line, '#') === 0) {
-            continue;
-        }
-        $parts = explode('=', $line, 2);
-        if (count($parts) === 2) {
-            $name = trim($parts[0]);
-            $value = trim($parts[1]);
-            // Strip wrapping quotes if any
-            if (preg_match('/^"(.+)"$/', $value, $matches) || preg_match('/^\'(.+)\'$/', $value, $matches)) {
-                $value = $matches[1];
-            }
-            if (getenv($name) === false) {
-                putenv("{$name}={$value}");
-                $_ENV[$name] = $value;
-                $_SERVER[$name] = $value;
-            }
-        }
-    }
-})();
+require_once __DIR__ . '/config/config.php';
 
 // ---------------------------------------------------------------------------
 // Configuration — In production, these values MUST be moved to environment

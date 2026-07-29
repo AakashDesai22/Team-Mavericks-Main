@@ -1,28 +1,26 @@
 <?php
 /**
  * ============================================================================
- * BODHANTRA EVENT OS — PHPMailer SMTP Engine & Email Service Blueprint
+ * BODHANTRA EVENT OS — PHPMailer SMTP Engine & Hostinger Email Service Blueprint
  * ============================================================================
  *
- * Fully compliant with Team Mavericks Email Master Guide (teammavericks.org).
+ * Fully aligned with Team Mavericks Master Guide (teammavericks.org).
  *
- * Core Features:
- *   1. PHPMailer SMTP Dispatcher (`createSmtpMailer`) with SSL/TLS stream setup.
- *   2. Dual Environment Routing (intercepts/logs OTPs locally, dispatches in production).
- *   3. Audit Logger (`logEmailAudit`) writing dispatches to DB & file (`logs/mail_errors.log`).
- *   4. Integrated `App\EmailTemplate` for responsive, inline HTML layouts.
+ * Capabilities:
+ *   1. PHPMailer SMTP Dispatcher (`createSmtpMailer`) over SSL (port 465) / TLS (port 587).
+ *   2. Native PHP `mail()` fallback for Hostinger postfix mailer resilience.
+ *   3. Dual Environment Routing (local intercept logger vs production dispatcher).
+ *   4. Integrated `App\EmailTemplate` engine for responsive HTML styling.
+ *   5. DB Audit & File Error Logger (`logEmailAudit`).
  *
  * @package BodhantraOS\Utils
  */
 
 declare(strict_types=1);
 
-// Require PHPMailer classes from local vendor directory
 require_once __DIR__ . '/PHPMailer/Exception.php';
 require_once __DIR__ . '/PHPMailer/PHPMailer.php';
 require_once __DIR__ . '/PHPMailer/SMTP.php';
-
-// Require EmailTemplate engine
 require_once __DIR__ . '/EmailTemplate.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -40,7 +38,7 @@ use App\EmailTemplate;
  */
 function isLocalEnvironment(): bool
 {
-    $appEnv = strtolower(getenv('APP_ENV') ?: (defined('APP_ENV') ? APP_ENV : ''));
+    $appEnv = strtolower((string)(getenv('APP_ENV') ?: (defined('APP_ENV') ? APP_ENV : '')));
     if ($appEnv === 'local') {
         return true;
     }
@@ -63,33 +61,37 @@ function isLocalEnvironment(): bool
 
 /**
  * Retrieve mail configuration from environment variables or defined constants.
+ * Aligned with Hostinger Webmail Master Guide (teammavericks.org).
  *
  * @return array
  */
 function getMailConfig(): array
 {
     $fromAddress = getenv('MAIL_FROM_ADDRESS')
-        ?: (defined('MAIL_FROM_ADDRESS') ? MAIL_FROM_ADDRESS : 'no-reply@teammavericks.org');
+        ?: (defined('MAIL_FROM_ADDRESS') ? MAIL_FROM_ADDRESS : (defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : 'official@teammavericks.org'));
 
-    // Fallback: If MAIL_FROM_ADDRESS still points to placehold domain, force teammavericks.org
+    // Fallback: If MAIL_FROM_ADDRESS still points to placeholder domain, force teammavericks.org
     if (strpos($fromAddress, 'yourdomain.com') !== false) {
-        $fromAddress = 'no-reply@teammavericks.org';
+        $fromAddress = 'official@teammavericks.org';
     }
 
     $smtpUser = getenv('SMTP_USER')
-        ?: (defined('SMTP_USER') ? SMTP_USER : 'no-reply@teammavericks.org');
+        ?: (defined('SMTP_USER') ? SMTP_USER : 'official@teammavericks.org');
+
+    $smtpPass = getenv('SMTP_PASS')
+        ?: (defined('SMTP_PASS') ? SMTP_PASS : 'MavericksOfficial@2016');
 
     return [
         'is_local'             => isLocalEnvironment(),
         'allow_local_sending'  => (strtolower((string)getenv('ALLOW_LOCAL_MAIL_SENDING')) === 'true'),
         'from_name'            => getenv('MAIL_FROM_NAME')    ?: (defined('MAIL_FROM_NAME') ? MAIL_FROM_NAME : 'Team Mavericks'),
         'from_address'         => $fromAddress,
-        'reply_to'             => getenv('MAIL_REPLY_TO')     ?: (defined('MAIL_REPLY_TO') ? MAIL_REPLY_TO : 'support@teammavericks.org'),
+        'reply_to'             => getenv('MAIL_REPLY_TO')     ?: (defined('MAIL_REPLY_TO') ? MAIL_REPLY_TO : 'official@teammavericks.org'),
         'smtp_host'            => getenv('SMTP_HOST')         ?: (defined('SMTP_HOST') ? SMTP_HOST : 'smtp.hostinger.com'),
         'smtp_port'            => getenv('SMTP_PORT')         ?: (defined('SMTP_PORT') ? (string)SMTP_PORT : '465'),
         'smtp_secure'          => getenv('SMTP_SECURE')       ?: (defined('SMTP_SECURE') ? SMTP_SECURE : 'ssl'),
         'smtp_user'            => $smtpUser,
-        'smtp_pass'            => getenv('SMTP_PASS')         ?: (defined('SMTP_PASS') ? SMTP_PASS : '@Bcw8&dz'),
+        'smtp_pass'            => $smtpPass,
     ];
 }
 
@@ -100,9 +102,7 @@ function getMailConfig(): array
 
 /**
  * Log email audit details into database table `application_email_logs`
- * and append failure logs to `logs/mail_errors.log`.
- *
- * Gracefully handles database absence so local testing without MySQL works 100%.
+ * and append failure logs to `uploads/mail_errors.log` and `logs/mail_errors.log`.
  */
 function logEmailAudit(
     ?int $applicationId,
@@ -113,24 +113,31 @@ function logEmailAudit(
     string $status,
     ?string $errorMessage = null
 ): void {
-    // 1. Always append failure details to mail_errors.log file
+    // 1. Always log failure details to error log files
     if ($status === 'failed' || !empty($errorMessage)) {
+        $timestamp = date('Y-m-d H:i:s');
+        $logMsg = "[{$timestamp}] Mail send failed (Type: {$emailType}) -> Error: " . ($errorMessage ?: 'Unknown error') . "\n";
+
+        // Append to logs/mail_errors.log
         $logsDir = dirname(__DIR__) . '/logs';
         if (!is_dir($logsDir)) {
             @mkdir($logsDir, 0755, true);
         }
-        $logFile = $logsDir . '/mail_errors.log';
-        $timestamp = date('Y-m-d H:i:s');
-        $logMsg = "[{$timestamp}] Mail send failed (Type: {$emailType}) -> Error: " . ($errorMessage ?: 'Unknown error') . "\n";
-        @file_put_contents($logFile, $logMsg, FILE_APPEND | LOCK_EX);
+        @file_put_contents($logsDir . '/mail_errors.log', $logMsg, FILE_APPEND | LOCK_EX);
+
+        // Append to uploads/mail_errors.log (as per Master Guide Section 6)
+        $uploadsDir = dirname(__DIR__, 2) . '/uploads';
+        if (!is_dir($uploadsDir)) {
+            @mkdir($uploadsDir, 0755, true);
+        }
+        @file_put_contents($uploadsDir . '/mail_errors.log', $logMsg, FILE_APPEND | LOCK_EX);
     }
 
-    // 2. Attempt DB Audit Insert if Database class / connection is available
+    // 2. Attempt DB Audit Insert if Database class is available
     try {
-        if (class_exists('Database') && method_exists('Database', 'getConnection')) {
-            $db = \Database::getConnection();
+        if (class_exists('Database') && method_exists('Database', 'connect')) {
+            $db = \Database::connect();
             if ($db instanceof \PDO) {
-                // Ensure table exists on the fly if needed
                 $db->exec("CREATE TABLE IF NOT EXISTS `application_email_logs` (
                     `id` INT AUTO_INCREMENT PRIMARY KEY,
                     `application_id` INT NULL,
@@ -150,7 +157,7 @@ function logEmailAudit(
             }
         }
     } catch (\Throwable $e) {
-        // Silently catch so database errors do not disrupt main execution flow.
+        // Silently catch so database log errors do not disrupt primary execution flow.
     }
 }
 
@@ -197,7 +204,7 @@ LOG;
 
 /**
  * Standard PHPMailer Factory Helper.
- * Configures authenticated SMTP with SSL/TLS stream options.
+ * Configures authenticated Hostinger SMTP with SSL/TLS stream options.
  *
  * @param array|null $customConfig Optional config override.
  * @return PHPMailer
@@ -243,6 +250,25 @@ function createSmtpMailer(?array $customConfig = null): PHPMailer
 }
 
 /**
+ * Secondary fail-safe: Dispatch via native PHP mail() through Hostinger's local postfix MTA.
+ */
+function sendMailViaNativePhp(string $to, string $subject, string $htmlBody, array $config): bool
+{
+    $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $encodedFromName = '=?UTF-8?B?' . base64_encode($config['from_name']) . '?=';
+
+    $headers = [
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        'From: ' . $encodedFromName . ' <' . $config['from_address'] . '>',
+        'Reply-To: ' . $config['reply_to'],
+        'X-Mailer: PHP/' . phpversion(),
+    ];
+
+    return @mail($to, $encodedSubject, $htmlBody, implode("\r\n", $headers));
+}
+
+/**
  * Legacy compatibility wrapper for sendMailViaSmtp using PHPMailer.
  */
 function sendMailViaSmtp(string $to, string $subject, string $htmlBody, array $config): bool
@@ -261,7 +287,7 @@ function sendMailViaSmtp(string $to, string $subject, string $htmlBody, array $c
 }
 
 /**
- * Core HTML Email Dispatcher — dual-routed by environment.
+ * Core HTML Email Dispatcher — dual-routed with automatic native fallback.
  *
  * @param string $to        Recipient email address.
  * @param string $subject   Email subject line.
@@ -287,7 +313,7 @@ function sendMail(string $to, string $subject, string $htmlBody, string $emailTy
         return true;
     }
 
-    // Production or local with network sending enabled — dispatch via PHPMailer SMTP
+    // 1. Primary Dispatch: Authenticated Hostinger PHPMailer SMTP
     try {
         $mail = createSmtpMailer($config);
         $mail->addAddress($to);
@@ -297,16 +323,20 @@ function sendMail(string $to, string $subject, string $htmlBody, string $emailTy
 
         logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'sent');
         return true;
-    } catch (PHPMailerException $e) {
-        $errorInfo = $mail->ErrorInfo ?: $e->getMessage();
-        error_log("[BodhantraOS][Mailer][PROD Error] Send to {$to} failed: {$errorInfo}");
-        logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'failed', $errorInfo);
-        return false;
     } catch (\Throwable $e) {
-        error_log("[BodhantraOS][Mailer][PROD Error] Exception sending to {$to}: " . $e->getMessage());
-        logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'failed', $e->getMessage());
-        return false;
+        $errorInfo = isset($mail) ? $mail->ErrorInfo : $e->getMessage();
+        error_log("[BodhantraOS][Mailer][SMTP Failed] Send to {$to} failed: {$errorInfo}. Attempting native mail() fallback...");
+        logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'failed', "SMTP Error: {$errorInfo}");
     }
+
+    // 2. Secondary Fallback: Native PHP mail() via Hostinger local postfix MTA
+    $nativeSent = sendMailViaNativePhp($to, $subject, $htmlBody, $config);
+    if ($nativeSent) {
+        logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'sent', 'Delivered via native mail() fallback');
+        return true;
+    }
+
+    return false;
 }
 
 
@@ -317,7 +347,7 @@ function sendMail(string $to, string $subject, string $htmlBody, string $emailTy
 /**
  * Send 6-Digit OTP Verification Email.
  */
-function sendOtpEmail(string $email, string $otpCode, string $campaignName = 'Mavericks Club Portal'): bool
+function sendOtpEmail(string $email, string $otpCode, string $campaignName = 'Team Mavericks Club Portal'): bool
 {
     if (isLocalEnvironment()) {
         logOtpToFile($email, $otpCode);

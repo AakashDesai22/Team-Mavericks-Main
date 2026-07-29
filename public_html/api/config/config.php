@@ -103,14 +103,14 @@ if ($isLocal) {
 
     // Override or set mailer configurations for Hostinger email structure.
     $productionMailSettings = [
-        'MAIL_FROM_NAME'    => 'Team Mavericks',
-        'MAIL_FROM_ADDRESS' => 'official@teammavericks.org',
-        'MAIL_REPLY_TO'     => 'official@teammavericks.org',
+        'MAIL_FROM_NAME'    => 'Mavericks Verification',
+        'MAIL_FROM_ADDRESS' => 'no-reply@teammavericks.org',
+        'MAIL_REPLY_TO'     => 'no-reply@teammavericks.org',
         'SMTP_HOST'         => 'smtp.hostinger.com',
         'SMTP_PORT'         => '465',
         'SMTP_SECURE'       => 'ssl',
-        'SMTP_USER'         => 'official@teammavericks.org',
-        'SMTP_PASS'         => 'MavericksOfficial@2016',
+        'SMTP_USER'         => 'no-reply@teammavericks.org',
+        'SMTP_PASS'         => '@Bcw8&dz',
     ];
 
     foreach ($productionMailSettings as $name => $value) {

@@ -68,25 +68,25 @@ function isLocalEnvironment(): bool
 function getMailConfig(): array
 {
     $fromAddress = getenv('MAIL_FROM_ADDRESS')
-        ?: (defined('MAIL_FROM_ADDRESS') ? MAIL_FROM_ADDRESS : (defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : 'official@teammavericks.org'));
+        ?: (defined('MAIL_FROM_ADDRESS') ? MAIL_FROM_ADDRESS : (defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : 'no-reply@teammavericks.org'));
 
     // Fallback: If MAIL_FROM_ADDRESS still points to placeholder domain, force teammavericks.org
     if (strpos($fromAddress, 'yourdomain.com') !== false) {
-        $fromAddress = 'official@teammavericks.org';
+        $fromAddress = 'no-reply@teammavericks.org';
     }
 
     $smtpUser = getenv('SMTP_USER')
-        ?: (defined('SMTP_USER') ? SMTP_USER : 'official@teammavericks.org');
+        ?: (defined('SMTP_USER') ? SMTP_USER : 'no-reply@teammavericks.org');
 
     $smtpPass = getenv('SMTP_PASS')
-        ?: (defined('SMTP_PASS') ? SMTP_PASS : 'MavericksOfficial@2016');
+        ?: (defined('SMTP_PASS') ? SMTP_PASS : '@Bcw8&dz');
 
     return [
         'is_local'             => isLocalEnvironment(),
         'allow_local_sending'  => (strtolower((string)getenv('ALLOW_LOCAL_MAIL_SENDING')) === 'true'),
-        'from_name'            => getenv('MAIL_FROM_NAME')    ?: (defined('MAIL_FROM_NAME') ? MAIL_FROM_NAME : 'Team Mavericks'),
+        'from_name'            => getenv('MAIL_FROM_NAME')    ?: (defined('MAIL_FROM_NAME') ? MAIL_FROM_NAME : 'Mavericks Verification'),
         'from_address'         => $fromAddress,
-        'reply_to'             => getenv('MAIL_REPLY_TO')     ?: (defined('MAIL_REPLY_TO') ? MAIL_REPLY_TO : 'official@teammavericks.org'),
+        'reply_to'             => getenv('MAIL_REPLY_TO')     ?: (defined('MAIL_REPLY_TO') ? MAIL_REPLY_TO : 'no-reply@teammavericks.org'),
         'smtp_host'            => getenv('SMTP_HOST')         ?: (defined('SMTP_HOST') ? SMTP_HOST : 'smtp.hostinger.com'),
         'smtp_port'            => getenv('SMTP_PORT')         ?: (defined('SMTP_PORT') ? (string)SMTP_PORT : '465'),
         'smtp_secure'          => getenv('SMTP_SECURE')       ?: (defined('SMTP_SECURE') ? SMTP_SECURE : 'ssl'),

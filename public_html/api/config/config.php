@@ -20,7 +20,10 @@ $isLocal = false;
 if (
     in_array($serverName, ['localhost', '127.0.0.1', '::1'], true) ||
     in_array($httpHost, ['localhost', '127.0.0.1', '::1'], true) ||
-    PHP_SAPI === 'cli-server'
+    PHP_SAPI === 'cli-server' ||
+    PHP_SAPI === 'cli' ||
+    getenv('APP_ENV') === 'local' ||
+    (isset($_ENV['APP_ENV']) && $_ENV['APP_ENV'] === 'local')
 ) {
     $isLocal = true;
 }
@@ -38,7 +41,10 @@ if ($isLocal) {
     define('APP_ENV', 'local'); // Define the global constant
 
     // Load .env variables locally
-    $envPath = dirname(__DIR__, 2) . '/.env';
+    $envPath = dirname(__DIR__, 3) . '/.env';
+    if (!file_exists($envPath)) {
+        $envPath = dirname(__DIR__, 2) . '/.env';
+    }
     if (file_exists($envPath)) {
         $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         foreach ($lines as $line) {
@@ -64,7 +70,7 @@ if ($isLocal) {
     }
 
     // Map your local array variables to constants if your codebase expects them
-    if (isset($_ENV['DB_HOST'])) {
+    if (isset($_ENV['DB_HOST']) && !defined('DB_HOST')) {
         define('DB_HOST', $_ENV['DB_HOST']);
         define('DB_NAME', $_ENV['DB_NAME']);
         define('DB_USER', $_ENV['DB_USER']);

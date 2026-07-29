@@ -47,20 +47,13 @@ if exist "C:\wamp64\bin\php" (
 
 :: If not found
 echo ===================================================
-echo [ERROR] PHP executable (php.exe) was NOT found!
+echo [WARNING] PHP executable (php.exe) was NOT found!
 echo ===================================================
-echo The PHP backend cannot start without PHP installed.
-echo.
-echo Please install one of the following:
-echo   1. Laragon (Recommended: https://laragon.org/download/)
-echo   2. XAMPP (https://www.apachefriends.org/)
-echo.
-echo If you HAVE installed PHP but in a custom folder, add it 
-echo to your Windows Environment PATH variable, or install XAMPP/Laragon.
+echo The PHP local backend (http://localhost:8000) will be offline.
+echo Starting the Vite Frontend Server anyway...
 echo ===================================================
 echo.
-pause
-exit /b 1
+goto :StartFrontend
 
 :FoundPHP
 echo [SUCCESS] Found PHP at: %PHP_PATH%
@@ -73,6 +66,7 @@ start "Bodhantra Event OS - PHP Backend" cmd /k %PHP_PATH% -S localhost:8000 -t 
 :: Give the backend a second to initialize
 timeout /t 2 >nul
 
+:StartFrontend
 :: Open the browser automatically
 echo Opening the web app in your default browser...
 start http://localhost:5173
@@ -80,6 +74,6 @@ start http://localhost:5173
 :: Start Vite Frontend in the current window
 echo Starting Vite Frontend Server...
 echo.
-npm run dev
+cmd /c npm run dev
 
 endlocal

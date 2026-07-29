@@ -1,65 +1,46 @@
 <?php
 /**
  * ============================================================================
- * BODHANTRA EVENT OS — Native PHP Mail Engine (Dual-Environment)
+ * BODHANTRA EVENT OS — PHPMailer SMTP Engine & Email Service Blueprint
  * ============================================================================
  *
- * Zero third-party dependencies.  Routes email payloads through two modes:
+ * Fully compliant with Team Mavericks Email Master Guide (teammavericks.org).
  *
- *   ┌─────────────────────────────────────────────────────────────────────────┐
- *   │  LOCAL (APP_ENV=local)                                                  │
- *   │  • Never touches an MTA.                                                │
- *   │  • OTP codes are intercepted and written to:                            │
- *   │      api/logs/otp_debug.log   (persistent, human-readable)              │
- *   │      PHP error_log()          (mirrors to the dev terminal)             │
- *   │  • Developer copies the OTP from terminal or log file and pastes it     │
- *   │    into the React frontend to complete the registration flow.           │
- *   ├─────────────────────────────────────────────────────────────────────────┤
- *   │  PRODUCTION (APP_ENV=production)                                        │
- *   │  • Dispatches HTML email via native PHP mail().                          │
- *   │  • Automatic Hostinger postfix alignment — no PHPMailer needed.         │
- *   │  • Hardened MIME + security headers for Gmail/Outlook inbox delivery.   │
- *   └─────────────────────────────────────────────────────────────────────────┘
- *
- * Environment variables (set in .env):
- *   APP_ENV            = local|production
- *   MAIL_FROM_NAME     = "Mavericks Verification"
- *   MAIL_FROM_ADDRESS  = no-reply@yourdomain.com
- *   MAIL_REPLY_TO      = support@yourdomain.com
- *
- * Includes 4 standard HTML mailing templates:
- *   1. OTP Verification Code
- *   2. Credentials Delivery (Member Invite)
- *   3. Registration Success & QR Code Recovery
- *   4. Payment Verification State Update
- *
- * All templates use inline CSS for maximum email client compatibility
- * (Gmail, Outlook, Yahoo, Apple Mail).
+ * Core Features:
+ *   1. PHPMailer SMTP Dispatcher (`createSmtpMailer`) with SSL/TLS stream setup.
+ *   2. Dual Environment Routing (intercepts/logs OTPs locally, dispatches in production).
+ *   3. Audit Logger (`logEmailAudit`) writing dispatches to DB & file (`logs/mail_errors.log`).
+ *   4. Integrated `App\EmailTemplate` for responsive, inline HTML layouts.
  *
  * @package BodhantraOS\Utils
  */
 
 declare(strict_types=1);
 
+// Require PHPMailer classes from local vendor directory
+require_once __DIR__ . '/PHPMailer/Exception.php';
+require_once __DIR__ . '/PHPMailer/PHPMailer.php';
+require_once __DIR__ . '/PHPMailer/SMTP.php';
+
+// Require EmailTemplate engine
+require_once __DIR__ . '/EmailTemplate.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception as PHPMailerException;
+use App\EmailTemplate;
 
 // ===========================================================================
-// ENVIRONMENT DETECTION
+// ENVIRONMENT DETECTION & CONFIGURATION
 // ===========================================================================
 
 /**
  * Determine if the application is running in local development mode.
  *
- * Detection order (first match wins):
- *   1. APP_ENV environment variable === 'local'
- *   2. $_SERVER['SERVER_NAME'] resolves to 'localhost' or '127.0.0.1'
- *   3. PHP_SAPI === 'cli-server' (PHP built-in dev server)
- *
- * @return bool  True if running locally, false for production.
+ * @return bool True if running locally, false for production.
  */
 function isLocalEnvironment(): bool
 {
-    // 1. Explicit env flag (highest priority)
-    $appEnv = strtolower(getenv('APP_ENV') ?: '');
+    $appEnv = strtolower(getenv('APP_ENV') ?: (defined('APP_ENV') ? APP_ENV : ''));
     if ($appEnv === 'local') {
         return true;
     }
@@ -67,66 +48,118 @@ function isLocalEnvironment(): bool
         return false;
     }
 
-    // 2. Server name detection (fallback for unconfigured .env)
     $serverName = $_SERVER['SERVER_NAME'] ?? '';
-    if (in_array($serverName, ['localhost', '127.0.0.1', '::1'], true)) {
+    $httpHost   = $_SERVER['HTTP_HOST'] ?? '';
+    if (
+        in_array($serverName, ['localhost', '127.0.0.1', '::1'], true) ||
+        in_array($httpHost, ['localhost', '127.0.0.1', '::1'], true) ||
+        PHP_SAPI === 'cli-server'
+    ) {
         return true;
     }
 
-    // 3. PHP built-in dev server detection
-    if (PHP_SAPI === 'cli-server') {
-        return true;
-    }
-
-    // Default to production if nothing matches — fail-safe for live servers.
     return false;
 }
 
-
-// ===========================================================================
-// CONFIGURATION
-// ===========================================================================
-
 /**
- * Retrieve mail configuration from environment variables.
+ * Retrieve mail configuration from environment variables or defined constants.
  *
- * @return array{from_name: string, from_address: string, reply_to: string, is_local: bool}
+ * @return array
  */
 function getMailConfig(): array
 {
+    $fromAddress = getenv('MAIL_FROM_ADDRESS')
+        ?: (defined('MAIL_FROM_ADDRESS') ? MAIL_FROM_ADDRESS : 'no-reply@teammavericks.org');
+
+    // Fallback: If MAIL_FROM_ADDRESS still points to placehold domain, force teammavericks.org
+    if (strpos($fromAddress, 'yourdomain.com') !== false) {
+        $fromAddress = 'no-reply@teammavericks.org';
+    }
+
+    $smtpUser = getenv('SMTP_USER')
+        ?: (defined('SMTP_USER') ? SMTP_USER : 'no-reply@teammavericks.org');
+
     return [
-        'is_local'     => isLocalEnvironment(),
-        'from_name'    => getenv('MAIL_FROM_NAME')    ?: 'Mavericks Verification',
-        'from_address' => getenv('MAIL_FROM_ADDRESS') ?: 'no-reply@yourdomain.com',
-        'reply_to'     => getenv('MAIL_REPLY_TO')     ?: 'support@yourdomain.com',
-        'smtp_host'    => getenv('SMTP_HOST')         ?: 'smtp.hostinger.com',
-        'smtp_port'    => getenv('SMTP_PORT')         ?: '465',
-        'smtp_secure'  => getenv('SMTP_SECURE')       ?: 'ssl',
-        'smtp_user'    => getenv('SMTP_USER')         ?: 'no-reply@teammavericks.org',
-        'smtp_pass'    => getenv('SMTP_PASS')         ?: '@Bcw8&dz',
+        'is_local'             => isLocalEnvironment(),
+        'allow_local_sending'  => (strtolower((string)getenv('ALLOW_LOCAL_MAIL_SENDING')) === 'true'),
+        'from_name'            => getenv('MAIL_FROM_NAME')    ?: (defined('MAIL_FROM_NAME') ? MAIL_FROM_NAME : 'Team Mavericks'),
+        'from_address'         => $fromAddress,
+        'reply_to'             => getenv('MAIL_REPLY_TO')     ?: (defined('MAIL_REPLY_TO') ? MAIL_REPLY_TO : 'support@teammavericks.org'),
+        'smtp_host'            => getenv('SMTP_HOST')         ?: (defined('SMTP_HOST') ? SMTP_HOST : 'smtp.hostinger.com'),
+        'smtp_port'            => getenv('SMTP_PORT')         ?: (defined('SMTP_PORT') ? (string)SMTP_PORT : '465'),
+        'smtp_secure'          => getenv('SMTP_SECURE')       ?: (defined('SMTP_SECURE') ? SMTP_SECURE : 'ssl'),
+        'smtp_user'            => $smtpUser,
+        'smtp_pass'            => getenv('SMTP_PASS')         ?: (defined('SMTP_PASS') ? SMTP_PASS : '@Bcw8&dz'),
     ];
 }
 
 
 // ===========================================================================
-// OTP DEBUG LOGGER (LOCAL DEVELOPMENT ONLY)
+// AUDIT LOGGER & FILE LOGGING
 // ===========================================================================
 
 /**
- * Write an OTP code to the local debug log file AND the PHP error_log.
+ * Log email audit details into database table `application_email_logs`
+ * and append failure logs to `logs/mail_errors.log`.
  *
- * The log file is written to `api/logs/otp_debug.log` relative to the
- * project's `public_html/api` directory.  Each entry includes a timestamp,
- * recipient email, and the plaintext OTP code for easy copy-paste.
- *
- * @param  string $email    The email address the OTP was requested for.
- * @param  string $otpCode  The 6-digit plaintext OTP code.
+ * Gracefully handles database absence so local testing without MySQL works 100%.
+ */
+function logEmailAudit(
+    ?int $applicationId,
+    ?int $senderId,
+    string $emailType,
+    string $subject,
+    string $bodyHtml,
+    string $status,
+    ?string $errorMessage = null
+): void {
+    // 1. Always append failure details to mail_errors.log file
+    if ($status === 'failed' || !empty($errorMessage)) {
+        $logsDir = dirname(__DIR__) . '/logs';
+        if (!is_dir($logsDir)) {
+            @mkdir($logsDir, 0755, true);
+        }
+        $logFile = $logsDir . '/mail_errors.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $logMsg = "[{$timestamp}] Mail send failed (Type: {$emailType}) -> Error: " . ($errorMessage ?: 'Unknown error') . "\n";
+        @file_put_contents($logFile, $logMsg, FILE_APPEND | LOCK_EX);
+    }
+
+    // 2. Attempt DB Audit Insert if Database class / connection is available
+    try {
+        if (class_exists('Database') && method_exists('Database', 'getConnection')) {
+            $db = \Database::getConnection();
+            if ($db instanceof \PDO) {
+                // Ensure table exists on the fly if needed
+                $db->exec("CREATE TABLE IF NOT EXISTS `application_email_logs` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `application_id` INT NULL,
+                    `sender_id` INT NULL,
+                    `email_type` VARCHAR(100) NOT NULL,
+                    `subject` VARCHAR(255) NOT NULL,
+                    `body_html` LONGTEXT NOT NULL,
+                    `status` ENUM('sent', 'failed') NOT NULL,
+                    `error_message` TEXT NULL,
+                    `sent_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+
+                $stmt = $db->prepare(
+                    "INSERT INTO application_email_logs (application_id, sender_id, email_type, subject, body_html, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                );
+                $stmt->execute([$applicationId, $senderId, $emailType, $subject, $bodyHtml, $status, $errorMessage]);
+            }
+        }
+    } catch (\Throwable $e) {
+        // Silently catch so database errors do not disrupt main execution flow.
+    }
+}
+
+/**
+ * Write an OTP code to local debug log file and PHP error log for dev testing.
  */
 function logOtpToFile(string $email, string $otpCode): void
 {
     $logsDir = dirname(__DIR__) . '/logs';
-
-    // Auto-create the logs directory if it doesn't exist.
     if (!is_dir($logsDir)) {
         @mkdir($logsDir, 0755, true);
     }
@@ -137,21 +170,18 @@ function logOtpToFile(string $email, string $otpCode): void
 
     $entry = <<<LOG
 
-    {$separator}
-      OTP INTERCEPTED — LOCAL DEV MODE
-    {$separator}
-      Timestamp : {$timestamp}
-      Email     : {$email}
-      OTP Code  : {$otpCode}
-    {$separator}
+{$separator}
+  OTP INTERCEPTED — LOCAL DEV MODE
+{$separator}
+  Timestamp : {$timestamp}
+  Email     : {$email}
+  OTP Code  : {$otpCode}
+{$separator}
 
-    LOG;
+LOG;
 
-    // Write to the dedicated log file (append mode).
     @file_put_contents($logFile, $entry, FILE_APPEND | LOCK_EX);
 
-    // Mirror to PHP error_log so it shows in the dev terminal running
-    // `php -S localhost:8000`.
     error_log(
         "\n" .
         "[BodhantraOS][DEV] ════════════════════════════════════════\n" .
@@ -162,333 +192,145 @@ function logOtpToFile(string $email, string $otpCode): void
 
 
 // ===========================================================================
-// CORE MAIL DISPATCHER
+// PHPMAILER FACTORY & CORE DISPATCHER
 // ===========================================================================
 
 /**
- * Send an HTML email — dual-routed by environment.
+ * Standard PHPMailer Factory Helper.
+ * Configures authenticated SMTP with SSL/TLS stream options.
  *
- * LOCAL MODE:
- *   Logs the email metadata to PHP error_log. Does NOT attempt delivery.
- *   OTP-specific interception is handled at the template level (see
- *   sendOtpEmail) so that the plaintext code is captured before it enters
- *   this generic dispatcher.
- *
- * PRODUCTION MODE:
- *   Dispatches via native PHP mail() with hardened MIME/security headers
- *   tuned for Hostinger shared hosting (postfix) + Gmail/Outlook inbox
- *   placement.
- *
- * @param  string $to        Recipient email address.
- * @param  string $subject   Email subject line.
- * @param  string $htmlBody  Complete HTML content of the email.
- *
- * @return bool              True if mail() returned true or if logged successfully.
+ * @param array|null $customConfig Optional config override.
+ * @return PHPMailer
  */
+function createSmtpMailer(?array $customConfig = null): PHPMailer
+{
+    $config = $customConfig ?: getMailConfig();
+    $mail = new PHPMailer(true);
+
+    $mail->isSMTP();
+    $mail->Host       = $config['smtp_host'];
+    $mail->SMTPAuth   = true;
+    $mail->Username   = $config['smtp_user'];
+    $mail->Password   = $config['smtp_pass'];
+    
+    $port = (int)$config['smtp_port'];
+    $mail->Port = $port;
+
+    if ($port === 465 || strtolower((string)$config['smtp_secure']) === 'ssl') {
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+    } else {
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+    }
+
+    // SSL options (bypasses self-signed cert checks on local development servers)
+    $mail->SMTPOptions = [
+        'ssl' => [
+            'verify_peer'       => false,
+            'verify_peer_name'  => false,
+            'allow_self_signed' => true,
+        ],
+    ];
+
+    $mail->setFrom($config['from_address'], $config['from_name']);
+    if (!empty($config['reply_to'])) {
+        $mail->addReplyTo($config['reply_to']);
+    }
+
+    $mail->isHTML(true);
+    $mail->CharSet = 'UTF-8';
+
+    return $mail;
+}
+
 /**
- * Dispatch email via secure authenticated SMTP over socket connection.
- *
- * Designed to bypass native mail() dropping by Hostinger/server firewalls.
- *
- * @param  string $to        Recipient email address.
- * @param  string $subject   Email subject line.
- * @param  string $htmlBody  Complete HTML content of the email.
- * @param  array  $config    SMTP configurations array.
- *
- * @return bool              True if the email was successfully accepted by the SMTP server.
+ * Legacy compatibility wrapper for sendMailViaSmtp using PHPMailer.
  */
 function sendMailViaSmtp(string $to, string $subject, string $htmlBody, array $config): bool
 {
-    $host = $config['smtp_host'];
-    $port = (int)$config['smtp_port'];
-    $encryption = strtolower($config['smtp_secure']);
-    $username = $config['smtp_user'];
-    $password = $config['smtp_pass'];
-
-    $socketHost = ($encryption === 'ssl') ? 'ssl://' . $host : $host;
-
-    $socket = @fsockopen($socketHost, $port, $errno, $errstr, 15);
-    if (!$socket) {
-        $errorMsg = "Connection failed: {$errstr} ({$errno})";
-        error_log("[BodhantraOS][Mailer][SMTP] " . $errorMsg);
-        echo "SMTP CONNECTION FAILED: " . $errorMsg . "\n";
+    try {
+        $mail = createSmtpMailer($config);
+        $mail->addAddress($to);
+        $mail->Subject = $subject;
+        $mail->Body    = $htmlBody;
+        return $mail->send();
+    } catch (\Throwable $e) {
+        $errorMsg = $e->getMessage();
+        error_log("[BodhantraOS][Mailer][SMTP Error] to {$to}: " . $errorMsg);
         return false;
     }
-
-    // Helper to read SMTP responses (handles multiline responses)
-    $readResponse = function($socket) {
-        $data = '';
-        while ($str = fgets($socket, 515)) {
-            $data .= $str;
-            if (substr($str, 3, 1) === ' ') {
-                break;
-            }
-        }
-        return $data;
-    };
-
-    // 1. Read Greeting (Code 220)
-    $resp = $readResponse($socket);
-    if (strpos($resp, '220') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] Greeting failed: " . $errorMsg);
-        echo "SMTP GREETING FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // 2. EHLO
-    $localHost = $_SERVER['SERVER_NAME'] ?? 'localhost';
-    fputs($socket, "EHLO {$localHost}" . "\r\n");
-    $resp = $readResponse($socket);
-    if (strpos($resp, '250') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] EHLO failed: " . $errorMsg);
-        echo "SMTP EHLO FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // 3. AUTH LOGIN
-    fputs($socket, "AUTH LOGIN" . "\r\n");
-    $resp = $readResponse($socket);
-    if (strpos($resp, '334') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] AUTH LOGIN command failed: " . $errorMsg);
-        echo "SMTP AUTH LOGIN CMD FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // Send username (base64 encoded)
-    fputs($socket, base64_encode($username) . "\r\n");
-    $resp = $readResponse($socket);
-    if (strpos($resp, '334') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] Username auth failed: " . $errorMsg);
-        echo "SMTP USER AUTH FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // Send password (base64 encoded)
-    fputs($socket, base64_encode($password) . "\r\n");
-    $resp = $readResponse($socket);
-    if (strpos($resp, '235') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] Password auth failed: " . $errorMsg);
-        echo "SMTP PASS AUTH FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // 4. MAIL FROM
-    fputs($socket, "MAIL FROM:<" . $config['from_address'] . ">" . "\r\n");
-    $resp = $readResponse($socket);
-    if (strpos($resp, '250') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] MAIL FROM failed: " . $errorMsg);
-        echo "SMTP MAIL FROM FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // 5. RCPT TO
-    fputs($socket, "RCPT TO:<" . $to . ">" . "\r\n");
-    $resp = $readResponse($socket);
-    if (strpos($resp, '250') !== 0 && strpos($resp, '251') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] RCPT TO failed: " . $errorMsg);
-        echo "SMTP RCPT TO FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // 6. DATA
-    fputs($socket, "DATA" . "\r\n");
-    $resp = $readResponse($socket);
-    if (strpos($resp, '354') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] DATA command failed: " . $errorMsg);
-        echo "SMTP DATA CMD FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // 7. Send raw data payload
-    $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
-    $encodedFromName = '=?UTF-8?B?' . base64_encode($config['from_name']) . '?=';
-
-    $headers = [
-        'MIME-Version: 1.0',
-        'Content-Type: text/html; charset=UTF-8',
-        'From: ' . $encodedFromName . ' <' . $config['from_address'] . '>',
-        'Reply-To: ' . $config['reply_to'],
-        'To: ' . $to,
-        'Subject: ' . $encodedSubject,
-        'Date: ' . date('r'),
-        'Message-ID: <' . md5(uniqid((string)time(), true)) . '@' . $localHost . '>',
-        'X-Mailer: PHP/' . phpversion(),
-        'X-Priority: 1',
-    ];
-
-    $rawEmail = implode("\r\n", $headers) . "\r\n\r\n" . $htmlBody;
-
-    // Dot stuffing (RFC 5321 4.5.2)
-    $rawEmail = str_replace("\r\n.", "\r\n..", $rawEmail);
-
-    fputs($socket, $rawEmail . "\r\n");
-    fputs($socket, "." . "\r\n");
-    
-    $resp = $readResponse($socket);
-    if (strpos($resp, '250') !== 0) {
-        $errorMsg = trim($resp);
-        error_log("[BodhantraOS][Mailer][SMTP] Data transfer failed: " . $errorMsg);
-        echo "SMTP DATA BODY SEND FAILED: " . $errorMsg . "\n";
-        fclose($socket);
-        return false;
-    }
-
-    // 8. QUIT
-    fputs($socket, "QUIT" . "\r\n");
-    $readResponse($socket);
-    fclose($socket);
-
-    return true;
 }
 
 /**
- * Send an HTML email — dual-routed by environment.
+ * Core HTML Email Dispatcher — dual-routed by environment.
  *
- * LOCAL MODE:
- *   Logs the email metadata to PHP error_log. Does NOT attempt delivery.
- *   OTP-specific interception is handled at the template level (see
- *   sendOtpEmail) so that the plaintext code is captured before it enters
- *   this generic dispatcher.
+ * @param string $to        Recipient email address.
+ * @param string $subject   Email subject line.
+ * @param string $htmlBody  Complete HTML content of the email.
+ * @param string $emailType Categorized email type for audit logging.
  *
- * PRODUCTION MODE:
- *   Dispatches via authenticated secure SMTP connection over socket.
- *
- * @param  string $to        Recipient email address.
- * @param  string $subject   Email subject line.
- * @param  string $htmlBody  Complete HTML content of the email.
- *
- * @return bool              True if socket transaction succeeded or if logged successfully.
+ * @return bool True if mail was delivered or successfully suppressed locally.
  */
-function sendMail(string $to, string $subject, string $htmlBody): bool
+function sendMail(string $to, string $subject, string $htmlBody, string $emailType = 'general'): bool
 {
     $config = getMailConfig();
 
-    // -----------------------------------------------------------------------
-    // LOCAL DEV — suppress delivery, log instead.
-    // -----------------------------------------------------------------------
-    if ($config['is_local']) {
+    // In local mode, suppress real network send unless explicitly enabled via ALLOW_LOCAL_MAIL_SENDING
+    if ($config['is_local'] && !$config['allow_local_sending']) {
         error_log(sprintf(
             "[BodhantraOS][Mailer][DEV] Email suppressed (local mode)\n" .
             "  To:      %s\n" .
-            "  Subject: %s\n" .
-            "  Body:    %s\n",
+            "  Subject: %s\n",
             $to,
-            $subject,
-            mb_substr(strip_tags($htmlBody), 0, 500) . '...'
+            $subject
         ));
+        logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'sent', 'Suppressed in local development mode');
         return true;
     }
 
-    // -----------------------------------------------------------------------
-    // PRODUCTION — Dispatch via authenticated SMTP socket wrapper.
-    // -----------------------------------------------------------------------
+    // Production or local with network sending enabled — dispatch via PHPMailer SMTP
     try {
-        return sendMailViaSmtp($to, $subject, $htmlBody, $config);
+        $mail = createSmtpMailer($config);
+        $mail->addAddress($to);
+        $mail->Subject = $subject;
+        $mail->Body    = $htmlBody;
+        $mail->send();
+
+        logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'sent');
+        return true;
+    } catch (PHPMailerException $e) {
+        $errorInfo = $mail->ErrorInfo ?: $e->getMessage();
+        error_log("[BodhantraOS][Mailer][PROD Error] Send to {$to} failed: {$errorInfo}");
+        logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'failed', $errorInfo);
+        return false;
     } catch (\Throwable $e) {
-        error_log("[BodhantraOS][Mailer][PROD] SMTP connection exception sending to {$to}: " . $e->getMessage());
+        error_log("[BodhantraOS][Mailer][PROD Error] Exception sending to {$to}: " . $e->getMessage());
+        logEmailAudit(null, null, $emailType, $subject, $htmlBody, 'failed', $e->getMessage());
         return false;
     }
 }
 
 
 // ===========================================================================
-// TEMPLATE 1: OTP VERIFICATION CODE
+// EMAIL TEMPLATES & SERVICES
 // ===========================================================================
 
 /**
- * Send an OTP verification email with a 6-digit code.
- *
- * In LOCAL mode, the plaintext OTP is intercepted and logged to both
- * `api/logs/otp_debug.log` and the PHP error_log (terminal) BEFORE
- * the email is suppressed by sendMail().
- *
- * @param  string $email   Recipient email address.
- * @param  string $otpCode The 6-digit OTP code (plaintext — for display only).
- *
- * @return bool
+ * Send 6-Digit OTP Verification Email.
  */
-function sendOtpEmail(string $email, string $otpCode): bool
+function sendOtpEmail(string $email, string $otpCode, string $campaignName = 'Mavericks Club Portal'): bool
 {
-    // -----------------------------------------------------------------------
-    // LOCAL DEV INTERCEPTION — log the OTP before suppressing the email.
-    // This is the primary mechanism for localhost OTP testing.
-    // -----------------------------------------------------------------------
     if (isLocalEnvironment()) {
         logOtpToFile($email, $otpCode);
     }
 
-    $subject = 'Your Verification Code — Mavericks Club Portal';
+    $subject  = 'Your Team Mavericks Email Verification Code';
+    $htmlBody = EmailTemplate::getOtpHtml('', $otpCode, $campaignName);
 
-    $html = buildEmailLayout(
-        'Verification Code',
-        <<<HTML
-        <p style="color: #94a3b8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
-            You're almost there! Use the verification code below to complete your
-            registration on the Mavericks Club Portal.
-        </p>
-
-        <!-- OTP Code Block -->
-        <div style="background: linear-gradient(135deg, #6d28d9 0%, #4f46e5 100%);
-                    border-radius: 16px; padding: 32px; text-align: center; margin: 0 0 24px;">
-            <p style="color: rgba(255,255,255,0.7); font-size: 11px; text-transform: uppercase;
-                      letter-spacing: 3px; margin: 0 0 12px; font-weight: 600;">
-                Your One-Time Code
-            </p>
-            <p style="color: #ffffff; font-size: 40px; font-weight: 800; letter-spacing: 12px;
-                      margin: 0; font-family: 'Courier New', Courier, monospace;">
-                {$otpCode}
-            </p>
-        </div>
-
-        <!-- Warning Box -->
-        <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.2);
-                    border-radius: 12px; padding: 16px; margin: 0 0 24px;">
-            <p style="color: #f59e0b; font-size: 13px; margin: 0; font-weight: 500;">
-                ⚠️ This code expires in <strong>5 minutes</strong>. Do not share this
-                code with anyone. Our team will never ask you for this code.
-            </p>
-        </div>
-
-        <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0;">
-            If you didn't request this code, you can safely ignore this email.
-            Someone may have entered your email address by mistake.
-        </p>
-        HTML
-    );
-
-    return sendMail($email, $subject, $html);
+    return sendMail($email, $subject, $htmlBody, 'otp');
 }
 
-
-// ===========================================================================
-// TEMPLATE 2: CREDENTIALS DELIVERY (MEMBER INVITE)
-// ===========================================================================
-
 /**
- * Send a credentials delivery email for a newly created Member account.
- *
- * @param  string $email      Recipient email.
- * @param  string $name       Member's full name.
- * @param  string $accountId  Their assigned MAV-MEM-XXX Account ID.
- * @param  string $loginPath  URL path to the login page (e.g., "/login").
- *
- * @return bool
+ * Send Member Credentials Email (Account Creation).
  */
 function sendCredentialsEmail(
     string $email,
@@ -496,306 +338,71 @@ function sendCredentialsEmail(
     string $accountId,
     string $loginPath = '/login'
 ): bool {
-    $subject = "Welcome to Mavericks — Your Account is Ready ({$accountId})";
+    $subject   = "Welcome to Mavericks — Your Account is Ready ({$accountId})";
     $firstName = explode(' ', trim($name))[0];
 
-    $html = buildEmailLayout(
-        'Account Created',
-        <<<HTML
-        <p style="color: #94a3b8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
-            Hi <strong style="color: #e2e8f0;">{$firstName}</strong>, welcome to the
-            Mavericks Club Portal! Your account has been created successfully.
-        </p>
+    $bodyHtml = <<<HTML
+<p style="color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+    Hi <strong style="color: #0f172a;">{$firstName}</strong>, welcome to Team Mavericks! Your member account has been activated.
+</p>
+<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 24px; margin: 0 0 24px;">
+    <p style="color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 6px; font-weight: 700;">Account ID</p>
+    <p style="color: #0f172a; font-size: 24px; font-weight: 800; letter-spacing: 2px; margin: 0 0 16px; font-family: monospace;">{$accountId}</p>
+    <p style="color: #64748b; font-size: 13px; margin: 0;"><strong>Username:</strong> {$email}</p>
+</div>
+HTML;
 
-        <!-- Credentials Card -->
-        <div style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
-                    border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 16px;
-                    padding: 28px; margin: 0 0 24px;">
-
-            <!-- Account ID -->
-            <p style="color: rgba(167, 139, 250, 0.8); font-size: 10px; text-transform: uppercase;
-                      letter-spacing: 2.5px; margin: 0 0 6px; font-weight: 700;">
-                Your Account ID
-            </p>
-            <p style="color: #ffffff; font-size: 26px; font-weight: 800; letter-spacing: 2px;
-                      margin: 0 0 20px; font-family: 'Courier New', Courier, monospace;">
-                {$accountId}
-            </p>
-
-            <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 0 0 20px;"></div>
-
-            <!-- Username -->
-            <table style="width: 100%; margin: 0 0 12px;">
-                <tr>
-                    <td style="color: #64748b; font-size: 12px; padding: 4px 0;">Username (Email)</td>
-                    <td style="color: #e2e8f0; font-size: 14px; font-weight: 600; text-align: right; padding: 4px 0;">
-                        {$email}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="color: #64748b; font-size: 12px; padding: 4px 0;">Password</td>
-                    <td style="color: #fbbf24; font-size: 14px; font-weight: 600; text-align: right; padding: 4px 0;">
-                        Your registered phone number
-                    </td>
-                </tr>
-            </table>
-        </div>
-
-        <!-- Login CTA -->
-        <div style="text-align: center; margin: 0 0 24px;">
-            <a href="{$loginPath}" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9);
-               color: #ffffff; text-decoration: none; font-weight: 700; font-size: 14px;
-               padding: 14px 40px; border-radius: 12px; letter-spacing: 0.5px;">
-                Login to Your Account →
-            </a>
-        </div>
-
-        <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0;">
-            Keep your Account ID safe — you'll need it for event check-ins and your
-            digital identity pass. We recommend changing your password after your first login.
-        </p>
-        HTML
-    );
-
-    return sendMail($email, $subject, $html);
+    $fullHtml = EmailTemplate::getHtml("Account Created", $bodyHtml, "Login to Portal", $loginPath);
+    return sendMail($email, $subject, $fullHtml, 'credentials');
 }
 
-
-// ===========================================================================
-// TEMPLATE 3: REGISTRATION SUCCESS & QR CODE RECOVERY
-// ===========================================================================
-
 /**
- * Send a registration confirmation email with the Account ID.
- *
- * @param  string $email     Recipient email.
- * @param  string $name      User's full name.
- * @param  string $accountId Their MAV-XXX-XXX Account ID.
- *
- * @return bool
+ * Send Registration Confirmation Email.
  */
 function sendRegistrationConfirmation(string $email, string $name, string $accountId): bool
 {
-    $subject = "Registration Confirmed — {$accountId}";
+    $subject   = "Registration Confirmed — {$accountId}";
     $firstName = explode(' ', trim($name))[0];
 
-    $html = buildEmailLayout(
-        'Registration Confirmed',
-        <<<HTML
-        <p style="color: #94a3b8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
-            Hey <strong style="color: #e2e8f0;">{$firstName}</strong>! 🎉 Your registration
-            on the Mavericks Club Portal is now confirmed.
-        </p>
+    $bodyHtml = <<<HTML
+<p style="color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+    Hey <strong style="color: #0f172a;">{$firstName}</strong>! 🎉 Your registration has been successfully confirmed.
+</p>
+<div style="background-color: #f1f5f9; border-radius: 10px; padding: 24px; text-align: center; margin: 0 0 24px;">
+    <p style="color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 6px; font-weight: 700;">Your Registration ID</p>
+    <p style="color: #0f172a; font-size: 26px; font-weight: 800; letter-spacing: 3px; margin: 0; font-family: monospace;">{$accountId}</p>
+</div>
+HTML;
 
-        <!-- Confirmation Card -->
-        <div style="background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
-                    border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 16px;
-                    padding: 28px; text-align: center; margin: 0 0 24px;">
-            <div style="display: inline-block; width: 56px; height: 56px; line-height: 56px;
-                        background: rgba(16, 185, 129, 0.2); border-radius: 50%;
-                        font-size: 28px; margin: 0 0 16px;">
-                ✓
-            </div>
-            <p style="color: rgba(167, 243, 208, 0.8); font-size: 10px; text-transform: uppercase;
-                      letter-spacing: 2.5px; margin: 0 0 8px; font-weight: 700;">
-                Your Account ID
-            </p>
-            <p style="color: #ffffff; font-size: 28px; font-weight: 800; letter-spacing: 3px;
-                      margin: 0; font-family: 'Courier New', Courier, monospace;">
-                {$accountId}
-            </p>
-        </div>
-
-        <!-- QR Code Notice -->
-        <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2);
-                    border-radius: 12px; padding: 16px; margin: 0 0 24px;">
-            <p style="color: #a5b4fc; font-size: 13px; margin: 0; font-weight: 500;">
-                🔐 <strong>Your Identity QR Code</strong> is available in your dashboard
-                after logging in. This QR code contains your Account ID and can be used
-                for event check-ins and identity verification.
-            </p>
-        </div>
-
-        <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0;">
-            You can now browse events, register for activities, and access all club
-            resources through your portal dashboard. Save this email for your records.
-        </p>
-        HTML
-    );
-
-    return sendMail($email, $subject, $html);
+    $fullHtml = EmailTemplate::getHtml("Registration Confirmed", $bodyHtml);
+    return sendMail($email, $subject, $fullHtml, 'registration_confirm');
 }
 
-
-// ===========================================================================
-// TEMPLATE 4: PAYMENT VERIFICATION STATE UPDATE
-// ===========================================================================
-
 /**
- * Send a payment approval notification email.
- *
- * Dispatched when an admin transitions a registration from Pending → Approved.
- *
- * @param  string $email      Recipient email.
- * @param  string $name       User's full name.
- * @param  string $eventTitle Title of the event that was approved.
- *
- * @return bool
+ * Send Payment Verification Approval Email.
  */
 function sendPaymentApprovalEmail(string $email, string $name, string $eventTitle): bool
 {
-    $subject = "Payment Verified — You're In for {$eventTitle}!";
+    $subject   = "Payment Verified — You're In for {$eventTitle}!";
     $firstName = explode(' ', trim($name))[0];
 
-    $html = buildEmailLayout(
-        'Payment Approved',
-        <<<HTML
-        <p style="color: #94a3b8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
-            Great news, <strong style="color: #e2e8f0;">{$firstName}</strong>! Your payment
-            has been verified and your registration is now approved.
-        </p>
+    $bodyHtml = <<<HTML
+<p style="color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+    Great news, <strong style="color: #0f172a;">{$firstName}</strong>! Your payment for <strong>{$eventTitle}</strong> has been verified.
+</p>
+<div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 20px; text-align: center; margin: 0 0 24px;">
+    <p style="color: #059669; font-size: 15px; font-weight: 700; margin: 0;">✅ Status: APPROVED</p>
+</div>
+HTML;
 
-        <!-- Approval Card -->
-        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
-                    border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 16px;
-                    padding: 28px; text-align: center; margin: 0 0 24px;">
-            <div style="display: inline-block; width: 56px; height: 56px; line-height: 56px;
-                        background: rgba(59, 130, 246, 0.2); border-radius: 50%;
-                        font-size: 28px; margin: 0 0 16px;">
-                💳
-            </div>
-            <p style="color: rgba(147, 197, 253, 0.8); font-size: 10px; text-transform: uppercase;
-                      letter-spacing: 2.5px; margin: 0 0 8px; font-weight: 700;">
-                Event Confirmed
-            </p>
-            <p style="color: #ffffff; font-size: 22px; font-weight: 800; margin: 0;">
-                {$eventTitle}
-            </p>
-        </div>
-
-        <!-- Status Badge -->
-        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2);
-                    border-radius: 12px; padding: 16px; margin: 0 0 24px; text-align: center;">
-            <p style="color: #10b981; font-size: 14px; margin: 0; font-weight: 700;">
-                ✅ Status: APPROVED
-            </p>
-        </div>
-
-        <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0 0 16px;">
-            You're all set! Here's what to do next:
-        </p>
-        <ul style="color: #94a3b8; font-size: 13px; line-height: 1.8; margin: 0 0 24px; padding-left: 20px;">
-            <li>Log in to your dashboard to view event details</li>
-            <li>Check the schedule and session times</li>
-            <li>Download your identity QR pass for check-in</li>
-        </ul>
-
-        <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0;">
-            See you at the event! If you have any questions, reach out to our team
-            through the contact page.
-        </p>
-        HTML
-    );
-
-    return sendMail($email, $subject, $html);
+    $fullHtml = EmailTemplate::getHtml("Payment Verified", $bodyHtml);
+    return sendMail($email, $subject, $fullHtml, 'payment_approval');
 }
 
-
-// ===========================================================================
-// EMAIL LAYOUT BUILDER (Shared Wrapper)
-// ===========================================================================
-
 /**
- * Build a complete HTML email document with the shared Mavericks brand layout.
- *
- * This wraps the inner content in a responsive, dark-themed email template
- * that renders consistently across major email clients.
- *
- * @param  string $headerTitle  Title shown in the email header bar.
- * @param  string $innerHtml    The template-specific HTML content.
- *
- * @return string               Complete HTML document ready for dispatch.
+ * Backwards compatibility helper wrapper buildEmailLayout.
  */
 function buildEmailLayout(string $headerTitle, string $innerHtml): string
 {
-    $year = date('Y');
-
-    return <<<HTML
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <title>{$headerTitle}</title>
-        <!--[if mso]>
-        <noscript>
-            <xml>
-                <o:OfficeDocumentSettings>
-                    <o:PixelsPerInch>96</o:PixelsPerInch>
-                </o:OfficeDocumentSettings>
-            </xml>
-        </noscript>
-        <![endif]-->
-    </head>
-    <body style="margin: 0; padding: 0; background-color: #0f172a; font-family: -apple-system,
-                 BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                 -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
-
-        <!-- Outer Container -->
-        <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
-               style="background-color: #0f172a;">
-            <tr>
-                <td align="center" style="padding: 40px 16px;">
-
-                    <!-- Inner Card -->
-                    <table role="presentation" cellpadding="0" cellspacing="0"
-                           width="100%" style="max-width: 520px; background: #1e293b;
-                           border: 1px solid rgba(148, 163, 184, 0.1);
-                           border-radius: 20px; overflow: hidden;">
-
-                        <!-- Header Bar -->
-                        <tr>
-                            <td style="background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #4c1d95 100%);
-                                       padding: 28px 32px; text-align: center;">
-                                <p style="color: rgba(255,255,255,0.6); font-size: 10px;
-                                          text-transform: uppercase; letter-spacing: 3px;
-                                          margin: 0 0 8px; font-weight: 600;">
-                                    Mavericks Club Portal
-                                </p>
-                                <h1 style="color: #ffffff; font-size: 22px; font-weight: 800;
-                                           margin: 0; letter-spacing: -0.3px;">
-                                    {$headerTitle}
-                                </h1>
-                            </td>
-                        </tr>
-
-                        <!-- Body Content -->
-                        <tr>
-                            <td style="padding: 32px;">
-                                {$innerHtml}
-                            </td>
-                        </tr>
-
-                        <!-- Footer -->
-                        <tr>
-                            <td style="padding: 20px 32px; border-top: 1px solid rgba(148, 163, 184, 0.08);
-                                       text-align: center;">
-                                <p style="color: #475569; font-size: 11px; margin: 0 0 4px;">
-                                    © {$year} Team Mavericks — Bodhantra Event OS
-                                </p>
-                                <p style="color: #334155; font-size: 10px; margin: 0;">
-                                    This is an automated message. Please do not reply directly.
-                                </p>
-                            </td>
-                        </tr>
-                    </table>
-
-                </td>
-            </tr>
-        </table>
-
-    </body>
-    </html>
-    HTML;
+    return EmailTemplate::getHtml($headerTitle, $innerHtml);
 }

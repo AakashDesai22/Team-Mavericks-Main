@@ -53,11 +53,11 @@ require_once __DIR__ . '/config/config.php';
 function getDatabaseConfig(): array
 {
     return [
-        'host'     => getenv('DB_HOST')     ?: 'localhost',
-        'port'     => getenv('DB_PORT')     ?: '3306',
-        'dbname'   => getenv('DB_NAME')     ?: 'bodhantra_os',
-        'username' => getenv('DB_USER')     ?: 'root',
-        'password' => getenv('DB_PASS')     ?: '',
+        'host'     => defined('DB_HOST') ? DB_HOST : (getenv('DB_HOST') ?: '127.0.0.1'),
+        'port'     => defined('DB_PORT') ? (string)DB_PORT : (getenv('DB_PORT') ?: '3306'),
+        'dbname'   => defined('DB_NAME') ? DB_NAME : (getenv('DB_NAME') ?: 'mavericks-main'),
+        'username' => defined('DB_USER') ? DB_USER : (getenv('DB_USER') ?: 'root'),
+        'password' => defined('DB_PASS') ? DB_PASS : (getenv('DB_PASS') !== false ? getenv('DB_PASS') : 'aakki'),
         'charset'  => 'utf8mb4',
         'collation'=> 'utf8mb4_unicode_ci',
     ];

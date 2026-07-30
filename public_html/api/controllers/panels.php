@@ -247,3 +247,60 @@ function handleCreateTopic(array $ctx): void
         'message'  => 'Topic added to pool.',
     ]);
 }
+
+/**
+ * PUT /panels/{id}
+ */
+function handleUpdatePanel(array $ctx): void
+{
+    $user    = requireAuth($ctx, ['Admin']);
+    $panelId = (int)($ctx['params']['id'] ?? 0);
+    $body    = $ctx['body'];
+
+    $panelName    = trim($body['panel_name'] ?? '');
+    $venueRoom    = trim($body['venue_room'] ?? '');
+    $judgeUserIds = is_array($body['judge_user_ids'] ?? null) ? $body['judge_user_ids'] : null;
+
+    if ($panelId <= 0 || $panelName === '') {
+        jsonResponse(400, ['success' => false, 'error' => 'panel_id and panel_name are required.']);
+    }
+
+    $pdo = Database::connect();
+    $stmt = $pdo->prepare('UPDATE competition_panels SET panel_name = :name, venue_room = :venue, updated_at = NOW() WHERE id = :pid');
+    $stmt->execute([
+        ':name'  => $panelName,
+        ':venue' => $venueRoom !== '' ? $venueRoom : null,
+        ':pid'   => $panelId,
+    ]);
+
+    if ($judgeUserIds !== null) {
+        $del = $pdo->prepare('DELETE FROM judge_assignments WHERE panel_id = :pid');
+        $del->execute([':pid' => $panelId]);
+
+        $jStmt = $pdo->prepare('INSERT INTO judge_assignments (panel_id, judge_user_id, assigned_role, created_at) VALUES (:pid, :jid, "Interviewer", NOW())');
+        foreach ($judgeUserIds as $jid) {
+            $jStmt->execute([':pid' => $panelId, ':jid' => (int)$jid]);
+        }
+    }
+
+    jsonResponse(200, ['success' => true, 'message' => 'Panel updated successfully.']);
+}
+
+/**
+ * DELETE /panels/{id}
+ */
+function handleDeletePanel(array $ctx): void
+{
+    $user    = requireAuth($ctx, ['Admin']);
+    $panelId = (int)($ctx['params']['id'] ?? 0);
+
+    if ($panelId <= 0) {
+        jsonResponse(400, ['success' => false, 'error' => 'panel_id is required.']);
+    }
+
+    $pdo = Database::connect();
+    $stmt = $pdo->prepare('DELETE FROM competition_panels WHERE id = :pid');
+    $stmt->execute([':pid' => $panelId]);
+
+    jsonResponse(200, ['success' => true, 'message' => 'Panel deleted successfully.']);
+}

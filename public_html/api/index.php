@@ -689,6 +689,22 @@ try {
             'audit'      => 'Assign judge to panel',
             'paramNames' => ['panel_id'],
         ],
+        // PUT /panels/{id}
+        [
+            'pattern'    => '#^PUT:panels/(\d+)$#',
+            'controller' => 'panels.php',
+            'action'     => 'handleUpdatePanel',
+            'audit'      => 'Update panel details',
+            'paramNames' => ['id'],
+        ],
+        // DELETE /panels/{id}
+        [
+            'pattern'    => '#^DELETE:panels/(\d+)$#',
+            'controller' => 'panels.php',
+            'action'     => 'handleDeletePanel',
+            'audit'      => 'Delete panel',
+            'paramNames' => ['id'],
+        ],
         // POST /interviews/slots/{id}/book
         [
             'pattern'    => '#^POST:interviews/slots/(\d+)/book$#',

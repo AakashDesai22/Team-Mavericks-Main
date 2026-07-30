@@ -18,7 +18,7 @@ const Icons = {
   ),
   Clock: (p) => (
     <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 16 14" />
     </svg>
   ),
   Star: (p) => (
@@ -31,9 +31,16 @@ const Icons = {
       <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
     </svg>
   ),
-  CheckCircle: (p) => (
+  Edit: (p) => (
     <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  ),
+  Trash: (p) => (
+    <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </svg>
   ),
   XCircle: (p) => (
@@ -54,7 +61,7 @@ const Icons = {
   )
 };
 
-const STAGES = ['Applied', 'Screened', 'Interview Scheduled', 'Interviewed', 'Shortlisted', 'Selected', 'Rejected'];
+const STAGES = ['Applied', 'Screened', 'Interview Scheduled', 'Interviewed', 'Shortlisted', 'Selected', 'Hold', 'Rejected'];
 
 export default function InterviewRecruitmentPortal() {
   const { user } = useAuth();
@@ -65,33 +72,36 @@ export default function InterviewRecruitmentPortal() {
   const [recruitmentEvents, setRecruitmentEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('kanban'); // 'kanban' | 'panels' | 'allocate' | 'evaluate'
+  const [activeTab, setActiveTab] = useState('candidates'); // 'candidates' | 'panels' | 'allocate' | 'my_panels'
 
   // Data states
   const [candidates, setCandidates] = useState([]);
   const [panels, setPanels] = useState([]);
-  const [slots, setSlots] = useState([]);
-  const [evaluations, setEvaluations] = useState([]);
-  const [teamMembers, setTeamMembers] = useState([]); // Admin + Member users for interviewer assignment
+  const [teamMembers, setTeamMembers] = useState([]);
 
-  // Form & action states
+  // Filter & Search states
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Form & alert states
   const [alert, setAlert] = useState(null);
 
-  // Panel Creation Modal
+  // Panel Modal State (Create & Edit)
   const [showPanelModal, setShowPanelModal] = useState(false);
+  const [editingPanel, setEditingPanel] = useState(null);
   const [panelName, setPanelName] = useState('');
   const [venueRoom, setVenueRoom] = useState('');
   const [selectedInterviewerIds, setSelectedInterviewerIds] = useState([]);
 
-  // Panel Allocation State (Admin assigning candidate to panel + slot)
+  // Panel Allocation State
   const [allocCandidateUserId, setAllocCandidateUserId] = useState('');
   const [allocPanelId, setAllocPanelId] = useState('');
   const [allocSlotDate, setAllocSlotDate] = useState('');
   const [allocStartTime, setAllocStartTime] = useState('10:00');
   const [allocEndTime, setAllocEndTime] = useState('10:20');
 
-  // Evaluation Form State
-  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  // Evaluation Modal State
+  const [evalCandidate, setEvalCandidate] = useState(null);
   const [evalScore, setEvalScore] = useState(80);
   const [evalComments, setEvalComments] = useState('');
   const [evalRecommendation, setEvalRecommendation] = useState('Select');
@@ -137,7 +147,6 @@ export default function InterviewRecruitmentPortal() {
     try {
       const res = await api.get('/users');
       if (res.data.success) {
-        // Filter users with role Admin or Member
         const staff = (res.data.users || []).filter(u => u.role_tier === 'Admin' || u.role_tier === 'Member');
         setTeamMembers(staff);
       }
@@ -149,17 +158,13 @@ export default function InterviewRecruitmentPortal() {
   const fetchEventData = async (eventId) => {
     try {
       setLoading(true);
-      const [candRes, panRes, slotRes, evalRes] = await Promise.all([
+      const [candRes, panRes] = await Promise.all([
         api.get(`/interviews/candidates?event_id=${eventId}`),
         api.get(`/panels?event_id=${eventId}`),
-        api.get(`/interviews/slots?event_id=${eventId}`),
-        api.get(`/interviews/evaluations?event_id=${eventId}`).catch(() => ({ data: { evaluations: [] } })),
       ]);
 
       if (candRes.data.success) setCandidates(candRes.data.candidates || []);
       if (panRes.data.success) setPanels(panRes.data.panels || []);
-      if (slotRes.data.success) setSlots(slotRes.data.slots || []);
-      if (evalRes.data.success) setEvaluations(evalRes.data.evaluations || []);
     } catch (err) {
       setAlert({ type: 'error', text: 'Error fetching recruitment details.' });
     } finally {
@@ -174,7 +179,7 @@ export default function InterviewRecruitmentPortal() {
         stage: newStage,
       });
       if (res.data.success) {
-        setAlert({ type: 'success', text: res.data.message });
+        setAlert({ type: 'success', text: `Candidate status updated to ${newStage}` });
         fetchEventData(selectedEventId);
       }
     } catch (err) {
@@ -182,29 +187,65 @@ export default function InterviewRecruitmentPortal() {
     }
   };
 
-  const handleCreatePanel = async (e) => {
+  const openCreatePanelModal = () => {
+    setEditingPanel(null);
+    setPanelName('');
+    setVenueRoom('');
+    setSelectedInterviewerIds([]);
+    setShowPanelModal(true);
+  };
+
+  const openEditPanelModal = (panel) => {
+    setEditingPanel(panel);
+    setPanelName(panel.panel_name || '');
+    setVenueRoom(panel.venue_room || '');
+    setSelectedInterviewerIds((panel.judges || []).map(j => j.user_id));
+    setShowPanelModal(true);
+  };
+
+  const handleSavePanel = async (e) => {
     e.preventDefault();
     if (!panelName.trim()) {
       setAlert({ type: 'error', text: 'Panel name is required.' });
       return;
     }
     try {
-      const res = await api.post('/panels', {
-        event_id: parseInt(selectedEventId),
-        panel_name: panelName,
-        venue_room: venueRoom,
-        judge_user_ids: selectedInterviewerIds.map(id => parseInt(id)),
-      });
+      let res;
+      if (editingPanel) {
+        res = await api.put(`/panels/${editingPanel.id}`, {
+          panel_name: panelName,
+          venue_room: venueRoom,
+          judge_user_ids: selectedInterviewerIds.map(id => parseInt(id)),
+        });
+      } else {
+        res = await api.post('/panels', {
+          event_id: parseInt(selectedEventId),
+          panel_name: panelName,
+          venue_room: venueRoom,
+          judge_user_ids: selectedInterviewerIds.map(id => parseInt(id)),
+        });
+      }
+
       if (res.data.success) {
-        setAlert({ type: 'success', text: 'Interview Panel created successfully!' });
+        setAlert({ type: 'success', text: editingPanel ? 'Panel updated!' : 'Panel created!' });
         setShowPanelModal(false);
-        setPanelName('');
-        setVenueRoom('');
-        setSelectedInterviewerIds([]);
         fetchEventData(selectedEventId);
       }
     } catch (err) {
-      setAlert({ type: 'error', text: err.response?.data?.error || 'Failed to create panel.' });
+      setAlert({ type: 'error', text: err.response?.data?.error || 'Failed to save panel.' });
+    }
+  };
+
+  const handleDeletePanel = async (panelId, name) => {
+    if (!window.confirm(`Are you sure you want to delete panel "${name}"?`)) return;
+    try {
+      const res = await api.delete(`/panels/${panelId}`);
+      if (res.data.success) {
+        setAlert({ type: 'success', text: 'Panel deleted successfully.' });
+        fetchEventData(selectedEventId);
+      }
+    } catch (err) {
+      setAlert({ type: 'error', text: err.response?.data?.error || 'Failed to delete panel.' });
     }
   };
 
@@ -216,13 +257,11 @@ export default function InterviewRecruitmentPortal() {
     }
 
     try {
-      // 1. Assign candidate to panel
       await api.post(`/panels/${allocPanelId}/allocate`, {
         user_ids: [parseInt(allocCandidateUserId)],
         candidate_role: 'Candidate',
       });
 
-      // 2. Create and book interview slot for candidate
       const slotRes = await api.post('/interviews/slots', {
         event_id: parseInt(selectedEventId),
         panel_id: parseInt(allocPanelId),
@@ -237,13 +276,12 @@ export default function InterviewRecruitmentPortal() {
         });
       }
 
-      // 3. Move candidate stage to Interview Scheduled
       await api.put(`/interviews/candidates/${allocCandidateUserId}/stage`, {
         event_id: parseInt(selectedEventId),
         stage: 'Interview Scheduled',
       });
 
-      setAlert({ type: 'success', text: 'Candidate successfully allocated to panel and slot scheduled!' });
+      setAlert({ type: 'success', text: 'Candidate successfully allocated to panel and schedule created!' });
       setAllocCandidateUserId('');
       fetchEventData(selectedEventId);
     } catch (err) {
@@ -253,16 +291,13 @@ export default function InterviewRecruitmentPortal() {
 
   const handleSubmitEvaluation = async (e) => {
     e.preventDefault();
-    if (!selectedCandidate) {
-      setAlert({ type: 'error', text: 'Select a candidate to evaluate.' });
-      return;
-    }
+    if (!evalCandidate) return;
 
     try {
       const res = await api.post('/interviews/evaluations', {
-        candidate_user_id: selectedCandidate.user_id,
+        candidate_user_id: evalCandidate.user_id,
         event_id: parseInt(selectedEventId),
-        panel_id: selectedCandidate.panel_id || null,
+        panel_id: evalCandidate.panel_id || null,
         score: parseFloat(evalScore),
         comments: evalComments,
         recommendation: evalRecommendation,
@@ -270,13 +305,12 @@ export default function InterviewRecruitmentPortal() {
       });
 
       if (res.data.success) {
-        setAlert({ type: 'success', text: `Evaluation recorded for ${selectedCandidate.name}!` });
-        setSelectedCandidate(null);
-        setEvalComments('');
+        setAlert({ type: 'success', text: `Evaluation saved for ${evalCandidate.name}!` });
+        setEvalCandidate(null);
         fetchEventData(selectedEventId);
       }
     } catch (err) {
-      setAlert({ type: 'error', text: err.response?.data?.error || 'Evaluation submission failed.' });
+      setAlert({ type: 'error', text: err.response?.data?.error || 'Evaluation failed.' });
     }
   };
 
@@ -286,30 +320,61 @@ export default function InterviewRecruitmentPortal() {
     );
   };
 
-  // Filter candidates for team members (non-admins see candidates allocated to their assigned panels)
-  const visibleCandidates = useMemo(() => {
-    if (isAdmin) return candidates;
-    // For non-admin members, check panels they are assigned to
-    const myPanelIds = panels
-      .filter(p => p.judges && p.judges.some(j => j.user_id === user?.id))
-      .map(p => p.id);
-    return candidates.filter(c => c.panel_name && myPanelIds.includes(c.panel_id));
-  }, [candidates, panels, isAdmin, user]);
+  // Panels assigned to logged in team member
+  const myAssignedPanels = useMemo(() => {
+    return panels.filter(p => p.judges && p.judges.some(j => j.user_id === user?.id));
+  }, [panels, user]);
+
+  // Filtered candidate roster
+  const filteredCandidates = useMemo(() => {
+    return candidates.filter((c) => {
+      const stage = c.stage || 'Applied';
+      const matchesStatus = statusFilter === 'ALL' || stage === statusFilter;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch = !q || (
+        (c.name && c.name.toLowerCase().includes(q)) ||
+        (c.email && c.email.toLowerCase().includes(q)) ||
+        (c.branch && c.branch.toLowerCase().includes(q)) ||
+        (c.unique_registration_id && c.unique_registration_id.toLowerCase().includes(q))
+      );
+      return matchesStatus && matchesSearch;
+    });
+  }, [candidates, statusFilter, searchQuery]);
+
+  // Helper for color-coded status pills & borders
+  const getStatusBadgeStyle = (stage) => {
+    switch (stage) {
+      case 'Selected':
+        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+      case 'Shortlisted':
+        return 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30';
+      case 'Hold':
+        return 'bg-amber-500/10 text-amber-300 border-amber-500/30';
+      case 'Rejected':
+        return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+      case 'Interview Scheduled':
+        return 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30';
+      case 'Interviewed':
+        return 'bg-purple-500/10 text-purple-300 border-purple-500/30';
+      default:
+        return 'bg-slate-500/10 text-slate-300 border-slate-500/30';
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in pb-16 text-slate-100 text-left">
-      {/* Page Header */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="section-header">Interview & Recruitment Portal</h1>
           <p className="text-xs md:text-sm text-slate-400 mt-1">
             {isAdmin
-              ? 'Complete recruitment engine: candidate screening, panel allocation, slot scheduling & evaluator scorecards.'
-              : 'Team Member Console: Evaluate candidates allocated to your assigned interview panels.'}
+              ? 'Structured candidate roster, panel management & evaluation scorecards.'
+              : 'Team Member Portal: Access assigned interview panels & evaluate candidates.'}
           </p>
         </div>
 
-        {/* Recruitment Drive Selector */}
+        {/* Drive Selector */}
         {recruitmentEvents.length > 0 && (
           <div className="flex items-center gap-2.5 bg-white/[0.03] p-2 rounded-2xl border border-white/[0.08]">
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-2">Drive:</span>
@@ -342,14 +407,25 @@ export default function InterviewRecruitmentPortal() {
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-white/[0.08] pb-1 overflow-x-auto">
         <button
-          onClick={() => setActiveTab('kanban')}
+          onClick={() => setActiveTab('candidates')}
           className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 flex items-center gap-2 transition-all ${
-            activeTab === 'kanban'
+            activeTab === 'candidates'
               ? 'border-brand-500 text-brand-400 font-black'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Icons.Users className="w-4 h-4" /> Pipeline Kanban
+          <Icons.Users className="w-4 h-4" /> Candidate Roster ({candidates.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('my_panels')}
+          className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 flex items-center gap-2 transition-all ${
+            activeTab === 'my_panels'
+              ? 'border-brand-500 text-brand-400 font-black'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Icons.Calendar className="w-4 h-4" /> My Assigned Panels ({myAssignedPanels.length})
         </button>
 
         {isAdmin && (
@@ -361,7 +437,7 @@ export default function InterviewRecruitmentPortal() {
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Icons.Calendar className="w-4 h-4" /> Panels ({panels.length})
+            <Icons.Layer className="w-4 h-4" /> All Panels ({panels.length})
           </button>
         )}
 
@@ -374,124 +450,214 @@ export default function InterviewRecruitmentPortal() {
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Icons.Layer className="w-4 h-4" /> Panel Allocation
+            <Icons.Plus className="w-4 h-4" /> Allocate Candidate
           </button>
         )}
-
-        <button
-          onClick={() => setActiveTab('evaluate')}
-          className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 flex items-center gap-2 transition-all ${
-            activeTab === 'evaluate'
-              ? 'border-brand-500 text-brand-400 font-black'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Icons.Star className="w-4 h-4" /> Evaluator Console
-        </button>
       </div>
 
       {loading ? (
         <div className="py-24 text-center">
           <Icons.Spinner className="w-8 h-8 mx-auto text-brand-400 mb-3" />
-          <p className="text-xs text-slate-400 uppercase tracking-widest font-bold animate-pulse">Syncing recruitment data...</p>
+          <p className="text-xs text-slate-400 uppercase tracking-widest font-bold animate-pulse">Loading recruitment database...</p>
         </div>
       ) : (
         <>
-          {/* TAB 1: KANBAN PIPELINE */}
-          {activeTab === 'kanban' && (
-            <div className="overflow-x-auto pb-4 custom-scrollbar">
-              <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-4 min-w-[1300px]">
-                {STAGES.map((stage) => {
-                  const stageCandidates = candidates.filter((c) => (c.stage || 'Applied') === stage);
-                  return (
-                    <div
-                      key={stage}
-                      className="glass-card p-3.5 rounded-2xl bg-white/[0.01] border border-white/[0.06] flex flex-col h-[650px]"
+          {/* TAB 1: CANDIDATE ROSTER (Clean list view with color-coded status badges) */}
+          {activeTab === 'candidates' && (
+            <div className="space-y-4">
+              {/* Filter & Search Bar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-card p-4 rounded-2xl">
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Status Filter:</span>
+                  {['ALL', ...STAGES].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setStatusFilter(st)}
+                      className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                        statusFilter === st
+                          ? 'bg-brand-500 text-black font-black shadow-glow-sm'
+                          : 'bg-white/[0.03] text-slate-400 hover:text-slate-200'
+                      }`}
                     >
-                      {/* Column Header */}
-                      <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/[0.06]">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">
-                          {stage}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-white/10 text-slate-400">
-                          {stageCandidates.length}
-                        </span>
-                      </div>
+                      {st}
+                    </button>
+                  ))}
+                </div>
 
-                      {/* Candidate Cards */}
-                      <div className="space-y-3 overflow-y-auto flex-1 pr-1 custom-scrollbar">
-                        {stageCandidates.length === 0 ? (
-                          <div className="text-center py-10 text-[11px] text-slate-500 italic">No candidates</div>
-                        ) : (
-                          stageCandidates.map((cand) => (
-                            <div
-                              key={cand.user_id}
-                              className="p-3.5 rounded-xl border border-white/[0.08] bg-black/40 hover:border-brand-500/40 transition-all space-y-2"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-xs text-white truncate">{cand.name}</span>
-                              </div>
-                              
-                              <div className="text-[10px] text-slate-400">
-                                {cand.branch || 'Branch N/A'} • {cand.academic_year || 'Year N/A'}
-                              </div>
+                <input
+                  type="text"
+                  placeholder="Search candidate by name, email, branch..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="px-4 py-2 rounded-xl bg-surface-900 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none w-full md:w-72"
+                />
+              </div>
 
-                              <div className="text-[10px] font-mono text-brand-400">
-                                {cand.unique_registration_id}
-                              </div>
+              {/* Roster Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredCandidates.length === 0 ? (
+                  <div className="col-span-3 py-16 text-center glass-card rounded-2xl text-slate-500 text-xs italic">
+                    No candidates found matching selected status/search query.
+                  </div>
+                ) : (
+                  filteredCandidates.map((cand) => {
+                    const currentStage = cand.stage || 'Applied';
+                    const badgeStyle = getStatusBadgeStyle(currentStage);
 
-                              {cand.panel_name && (
-                                <div className="text-[10px] p-2 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 leading-tight">
-                                  🏢 Panel: <strong>{cand.panel_name}</strong>
-                                  {cand.slot_date && (
-                                    <div className="mt-0.5">📅 {cand.slot_date} ({cand.start_time})</div>
-                                  )}
-                                </div>
-                              )}
+                    return (
+                      <div
+                        key={cand.user_id}
+                        className={`glass-card p-5 rounded-2xl border bg-white/[0.01] hover:bg-white/[0.02] transition-all flex flex-col justify-between space-y-4 ${badgeStyle.split(' ')[2]}`}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <h3 className="text-sm font-black text-white">{cand.name}</h3>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">{cand.unique_registration_id}</div>
+                            </div>
 
-                              {cand.score !== null && cand.score !== undefined && (
-                                <div className="text-[10px] flex items-center justify-between text-amber-400 font-bold pt-1">
-                                  <span>Score: {cand.score}/100</span>
-                                  <span className="uppercase px-1.5 py-0.5 rounded bg-amber-400/10 border border-amber-400/20 text-[9px]">
-                                    {cand.recommendation}
-                                  </span>
-                                </div>
-                              )}
+                            <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border ${badgeStyle}`}>
+                              {currentStage}
+                            </span>
+                          </div>
 
-                              {/* Stage Transition Selector for Admin */}
-                              {isAdmin && (
-                                <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
-                                  <select
-                                    value={cand.stage || 'Applied'}
-                                    onChange={(e) => handleStageChange(cand.user_id, e.target.value)}
-                                    className="w-full text-[10px] font-semibold bg-surface-900 border border-white/10 rounded-lg px-2 py-1 text-slate-300 hover:border-brand-500 focus:outline-none cursor-pointer"
-                                  >
-                                    {STAGES.map((s) => (
-                                      <option key={s} value={s}>
-                                        Move to: {s}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
+                          <div className="text-xs text-slate-300 space-y-1">
+                            <div>📚 {cand.branch || 'Branch N/A'} • {cand.academic_year || 'Year N/A'}</div>
+                            <div>✉️ {cand.email}</div>
+                            {cand.phone && <div>📞 {cand.phone}</div>}
+                          </div>
+
+                          {cand.panel_name && (
+                            <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] space-y-0.5">
+                              <div>🏢 Assigned Panel: <strong>{cand.panel_name}</strong></div>
+                              {cand.slot_date && (
+                                <div>📅 Scheduled: {cand.slot_date} ({cand.start_time} - {cand.end_time})</div>
                               )}
                             </div>
-                          ))
-                        )}
+                          )}
+
+                          {cand.score !== null && cand.score !== undefined && (
+                            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-bold space-y-0.5">
+                              <div>Score Rating: {cand.score}/100</div>
+                              <div>Recommendation: {cand.recommendation}</div>
+                              {cand.comments && <div className="text-slate-300 font-normal italic leading-snug">"{cand.comments}"</div>}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action Bar */}
+                        <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between gap-2">
+                          <button
+                            onClick={() => {
+                              setEvalCandidate(cand);
+                              setEvalScore(cand.score || 80);
+                              setEvalComments(cand.comments || '');
+                              setEvalRecommendation(cand.recommendation || 'Select');
+                              setEvalStage(cand.stage || 'Interviewed');
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-brand-500/20 border border-brand-500/30 text-brand-300 hover:bg-brand-500 hover:text-black transition-all text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
+                          >
+                            <Icons.Star className="w-3 h-3" /> Evaluate
+                          </button>
+
+                          {isAdmin && (
+                            <select
+                              value={currentStage}
+                              onChange={(e) => handleStageChange(cand.user_id, e.target.value)}
+                              className="text-[10px] font-bold bg-surface-900 border border-white/10 rounded-xl px-2 py-1.5 text-slate-300 focus:outline-none cursor-pointer"
+                            >
+                              {STAGES.map((s) => (
+                                <option key={s} value={s}>Move to: {s}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
 
-          {/* TAB 2: PANELS & TEAM MEMBER ASSIGNMENTS */}
+          {/* TAB 2: MY ASSIGNED PANELS (For Team Members & Admins) */}
+          {activeTab === 'my_panels' && (
+            <div className="space-y-6">
+              <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Interview Panels Assigned to You</h3>
+
+              {myAssignedPanels.length === 0 ? (
+                <div className="py-16 text-center glass-card rounded-2xl text-slate-500 text-xs italic">
+                  You are not currently assigned as an interviewer on any active panel for this recruitment drive.
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {myAssignedPanels.map((p) => {
+                    // Candidates allocated to this panel
+                    const panelCandidates = candidates.filter(c => c.panel_id === p.id);
+
+                    return (
+                      <div key={p.id} className="glass-card p-6 rounded-2xl border border-white/[0.08] space-y-4">
+                        <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+                          <div>
+                            <h4 className="text-base font-black text-white">{p.panel_name}</h4>
+                            <div className="text-xs text-slate-400 mt-0.5">📍 Venue / Room / Link: <span className="text-white font-semibold">{p.venue_room || 'TBD'}</span></div>
+                          </div>
+
+                          <span className="px-3 py-1 rounded-xl text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {panelCandidates.length} Allocated Candidates
+                          </span>
+                        </div>
+
+                        {/* Allocated Candidates List */}
+                        <div className="space-y-3">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Candidates Scheduled for your panel:</span>
+
+                          {panelCandidates.length === 0 ? (
+                            <p className="text-xs text-slate-500 italic">No candidates allocated to this panel yet.</p>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {panelCandidates.map((c) => (
+                                <div key={c.user_id} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
+                                  <div>
+                                    <div className="text-xs font-bold text-white">{c.name} ({c.branch})</div>
+                                    <div className="text-[10px] text-slate-400 mt-0.5">{c.email}</div>
+                                    {c.slot_date && (
+                                      <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">📅 {c.slot_date} ({c.start_time} - {c.end_time})</div>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    onClick={() => {
+                                      setEvalCandidate(c);
+                                      setEvalScore(c.score || 80);
+                                      setEvalComments(c.comments || '');
+                                      setEvalRecommendation(c.recommendation || 'Select');
+                                      setEvalStage(c.stage || 'Interviewed');
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl bg-brand-500 text-black hover:bg-brand-400 font-black text-[10px] uppercase tracking-wider transition-all flex items-center gap-1 shadow-glow-sm"
+                                  >
+                                    <Icons.Star className="w-3 h-3 text-black" /> Evaluate
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: ALL PANELS & CRUD (Admin Only) */}
           {activeTab === 'panels' && isAdmin && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">Active Interview Panels</h3>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">All Interview Panels</h3>
                 <button
-                  onClick={() => setShowPanelModal(true)}
+                  onClick={openCreatePanelModal}
                   className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 rounded-xl font-bold uppercase tracking-wider text-black shadow-glow-sm"
                 >
                   <Icons.Plus className="w-4 h-4 text-black" /> Create Interview Panel
@@ -500,40 +666,53 @@ export default function InterviewRecruitmentPortal() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {panels.length === 0 ? (
-                  <div className="col-span-3 text-center py-16 glass-card rounded-2xl">
-                    <p className="text-xs text-slate-500">No interview panels created for this drive yet.</p>
+                  <div className="col-span-3 text-center py-16 glass-card rounded-2xl text-xs text-slate-500">
+                    No interview panels created for this drive yet.
                   </div>
                 ) : (
                   panels.map((p) => (
-                    <div key={p.id} className="glass-card p-5 rounded-2xl border border-white/[0.08] space-y-4">
-                      <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-                        <h4 className="font-black text-sm text-white">{p.panel_name}</h4>
-                        <span className="px-2.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          {p.status}
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-slate-400 space-y-1">
-                        <div>📍 Venue / Room / Link: <span className="text-white font-semibold">{p.venue_room || 'TBD'}</span></div>
-                        <div>👥 Allocated Candidates: <span className="text-white font-semibold">{p.allocated_candidates_count} candidates</span></div>
-                      </div>
-
-                      <div className="pt-3 border-t border-white/[0.06] space-y-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Assigned Team Interviewers:</span>
-                        {p.judges && p.judges.length > 0 ? (
-                          <div className="space-y-1.5">
-                            {p.judges.map((j) => (
-                              <div key={j.assignment_id} className="text-xs text-slate-200 flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-                                <span className="font-medium">{j.name}</span>
-                                <span className="text-[9px] text-brand-400 uppercase font-black px-2 py-0.5 rounded bg-brand-500/10">
-                                  {j.assigned_role}
-                                </span>
-                              </div>
-                            ))}
+                    <div key={p.id} className="glass-card p-5 rounded-2xl border border-white/[0.08] space-y-4 flex flex-col justify-between">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+                          <h4 className="font-black text-sm text-white">{p.panel_name}</h4>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => openEditPanelModal(p)}
+                              className="p-1.5 rounded-lg border border-white/10 hover:bg-white/10 text-slate-300"
+                              title="Edit Panel"
+                            >
+                              <Icons.Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeletePanel(p.id, p.panel_name)}
+                              className="p-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                              title="Delete Panel"
+                            >
+                              <Icons.Trash className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                        ) : (
-                          <p className="text-xs text-slate-500 italic">No team members assigned yet.</p>
-                        )}
+                        </div>
+
+                        <div className="text-xs text-slate-400 space-y-1">
+                          <div>📍 Venue / Room / Link: <span className="text-white font-semibold">{p.venue_room || 'TBD'}</span></div>
+                          <div>👥 Allocated Candidates: <span className="text-white font-semibold">{p.allocated_candidates_count} candidates</span></div>
+                        </div>
+
+                        <div className="pt-2 border-t border-white/[0.06] space-y-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Assigned Team Interviewers:</span>
+                          {p.judges && p.judges.length > 0 ? (
+                            <div className="space-y-1">
+                              {p.judges.map((j) => (
+                                <div key={j.assignment_id} className="text-xs text-slate-200 flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+                                  <span className="font-medium">{j.name}</span>
+                                  <span className="text-[9px] text-brand-400 font-bold uppercase">{j.assigned_role}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-500 italic">No team members assigned.</p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))
@@ -542,7 +721,7 @@ export default function InterviewRecruitmentPortal() {
             </div>
           )}
 
-          {/* TAB 3: ADMIN PANEL ALLOCATION (Candidate to Panel Assignment) */}
+          {/* TAB 4: PANEL ALLOCATION (Admin Only) */}
           {activeTab === 'allocate' && isAdmin && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
               {/* Allocation Form */}
@@ -554,7 +733,7 @@ export default function InterviewRecruitmentPortal() {
                 <form onSubmit={handleAllocateCandidateToPanel} className="space-y-4">
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                      1. Select Candidate (Approved / Shortlisted):
+                      1. Select Candidate:
                     </label>
                     <select
                       value={allocCandidateUserId}
@@ -644,17 +823,15 @@ export default function InterviewRecruitmentPortal() {
                       <div key={c.user_id} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
                         <div>
                           <div className="text-xs font-bold text-white">{c.name} ({c.branch})</div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            🏢 {c.panel_name} • 📍 {c.venue_room || 'TBD'}
-                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">🏢 {c.panel_name} • 📍 {c.venue_room || 'TBD'}</div>
                           {c.slot_date && (
                             <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">
-                              📅 Scheduled: {c.slot_date} ({c.start_time} - {c.end_time})
+                              📅 {c.slot_date} ({c.start_time} - {c.end_time})
                             </div>
                           )}
                         </div>
 
-                        <span className="text-[9px] font-black uppercase px-2.5 py-1 rounded bg-brand-500/10 text-brand-300 border border-brand-500/20">
+                        <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded border ${getStatusBadgeStyle(c.stage || 'Applied')}`}>
                           {c.stage || 'Interview Scheduled'}
                         </span>
                       </div>
@@ -664,152 +841,21 @@ export default function InterviewRecruitmentPortal() {
               </div>
             </div>
           )}
-
-          {/* TAB 4: EVALUATOR CONSOLE */}
-          {activeTab === 'evaluate' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Candidate Picker List */}
-              <div className="lg:col-span-5 glass-card p-6 rounded-2xl space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Select Candidate to Evaluate</h3>
-                <div className="space-y-2.5 max-h-[550px] overflow-y-auto pr-2 custom-scrollbar">
-                  {visibleCandidates.length === 0 ? (
-                    <div className="text-xs text-slate-500 italic py-8 text-center">
-                      No allocated candidates available for evaluation.
-                    </div>
-                  ) : (
-                    visibleCandidates.map((c) => (
-                      <div
-                        key={c.user_id}
-                        onClick={() => {
-                          setSelectedCandidate(c);
-                          setEvalScore(c.score || 80);
-                          setEvalComments(c.comments || '');
-                          setEvalRecommendation(c.recommendation || 'Select');
-                          setEvalStage(c.stage || 'Interviewed');
-                        }}
-                        className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                          selectedCandidate?.user_id === c.user_id
-                            ? 'border-brand-500 bg-brand-500/10 shadow-glow-sm'
-                            : 'border-white/[0.06] bg-white/[0.02] hover:border-white/20'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-white">{c.name}</span>
-                          <span className="text-[9px] font-black px-2 py-0.5 rounded bg-white/10 text-slate-300 uppercase">
-                            {c.stage || 'Applied'}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-1">{c.branch} • {c.academic_year}</div>
-                        {c.panel_name && (
-                          <div className="text-[10px] text-indigo-300 font-semibold mt-1">🏢 Panel: {c.panel_name}</div>
-                        )}
-                        {c.score !== null && (
-                          <div className="text-[10px] text-amber-400 font-bold mt-1">Score: {c.score}/100 • Verdict: {c.recommendation}</div>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Evaluation Form */}
-              <div className="lg:col-span-7 glass-card p-6 rounded-2xl space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Candidate Evaluation Scorecard</h3>
-
-                {selectedCandidate ? (
-                  <form onSubmit={handleSubmitEvaluation} className="space-y-4">
-                    <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-1">
-                      <div className="text-sm font-bold text-brand-300">{selectedCandidate.name}</div>
-                      <div className="text-xs text-slate-400">{selectedCandidate.email} • {selectedCandidate.phone}</div>
-                      <div className="text-xs text-slate-400">{selectedCandidate.branch} • {selectedCandidate.academic_year}</div>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                        Interview Score Rating (0 - 100):
-                      </label>
-                      <div className="flex items-center gap-4">
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={evalScore}
-                          onChange={(e) => setEvalScore(e.target.value)}
-                          className="w-full accent-brand-500 cursor-pointer"
-                        />
-                        <span className="text-lg font-black text-amber-400 w-12 text-right">{evalScore}</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Interviewer Verdict Recommendation:</label>
-                        <select
-                          value={evalRecommendation}
-                          onChange={(e) => setEvalRecommendation(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
-                        >
-                          <option value="Select">✅ Select (Recommend Hiring)</option>
-                          <option value="Hold">⏸️ Hold (Borderline / Waitlist)</option>
-                          <option value="Reject">❌ Reject</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Recruitment Stage Transition:</label>
-                        <select
-                          value={evalStage}
-                          onChange={(e) => setEvalStage(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
-                        >
-                          <option value="Interviewed">Interviewed</option>
-                          <option value="Shortlisted">Shortlisted</option>
-                          <option value="Selected">Selected</option>
-                          <option value="Rejected">Rejected</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                        Qualitative Interview Comments & Feedback:
-                      </label>
-                      <textarea
-                        rows={4}
-                        value={evalComments}
-                        onChange={(e) => setEvalComments(e.target.value)}
-                        placeholder="Technical skills, communication confidence, domain knowledge, team fit..."
-                        className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none resize-none"
-                      />
-                    </div>
-
-                    <button type="submit" className="btn-primary text-xs py-3 w-full font-bold uppercase tracking-wider text-black rounded-xl shadow-glow-sm">
-                      Submit Evaluation & Save Verdict
-                    </button>
-                  </form>
-                ) : (
-                  <div className="py-24 text-center text-xs text-slate-500 italic">
-                    Click a candidate from the left list to open their evaluation scorecard.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </>
       )}
 
-      {/* CREATE PANEL MODAL */}
+      {/* CREATE / EDIT PANEL MODAL */}
       {showPanelModal && isAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
           <div className="glass-card p-6 w-full max-w-lg rounded-[28px] border border-white/10 space-y-4">
             <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-              <h3 className="text-base font-bold text-white">Create Interview Panel</h3>
+              <h3 className="text-base font-bold text-white">{editingPanel ? 'Edit Interview Panel' : 'Create Interview Panel'}</h3>
               <button onClick={() => setShowPanelModal(false)} className="text-slate-400 hover:text-white">
                 <Icons.XCircle className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreatePanel} className="space-y-4">
+            <form onSubmit={handleSavePanel} className="space-y-4">
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Panel Name:</label>
                 <input
@@ -833,10 +879,9 @@ export default function InterviewRecruitmentPortal() {
                 />
               </div>
 
-              {/* Select Team Member Interviewers */}
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                  Assign Team Member Interviewers (Admin & Member Roles):
+                  Assign Team Member Interviewers:
                 </label>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 border border-white/10 rounded-xl p-2 bg-surface-900 custom-scrollbar">
                   {teamMembers.length === 0 ? (
@@ -869,7 +914,100 @@ export default function InterviewRecruitmentPortal() {
                   Cancel
                 </button>
                 <button type="submit" className="flex-1 btn-primary py-2.5 text-xs font-bold uppercase tracking-wider text-black rounded-xl shadow-glow-sm">
-                  Create Panel
+                  {editingPanel ? 'Save Changes' : 'Create Panel'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EVALUATION MODAL */}
+      {evalCandidate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="glass-card p-6 w-full max-w-lg rounded-[28px] border border-white/10 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <h3 className="text-base font-bold text-white">Evaluate Candidate</h3>
+              <button onClick={() => setEvalCandidate(null)} className="text-slate-400 hover:text-white">
+                <Icons.XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitEvaluation} className="space-y-4">
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-1">
+                <div className="text-sm font-bold text-brand-300">{evalCandidate.name}</div>
+                <div className="text-xs text-slate-400">{evalCandidate.branch} • {evalCandidate.academic_year}</div>
+                <div className="text-xs text-slate-400">{evalCandidate.email}</div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Interview Score Rating (0 - 100):
+                </label>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={evalScore}
+                    onChange={(e) => setEvalScore(e.target.value)}
+                    className="w-full accent-brand-500 cursor-pointer"
+                  />
+                  <span className="text-lg font-black text-amber-400 w-12 text-right">{evalScore}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Recommendation:</label>
+                  <select
+                    value={evalRecommendation}
+                    onChange={(e) => setEvalRecommendation(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
+                  >
+                    <option value="Select">✅ Select</option>
+                    <option value="Hold">⏸️ Hold</option>
+                    <option value="Reject">❌ Reject</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Stage Transition:</label>
+                  <select
+                    value={evalStage}
+                    onChange={(e) => setEvalStage(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
+                  >
+                    <option value="Interviewed">Interviewed</option>
+                    <option value="Shortlisted">Shortlisted</option>
+                    <option value="Selected">Selected</option>
+                    <option value="Hold">Hold</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Interviewer Feedback & Notes:</label>
+                <textarea
+                  rows={4}
+                  value={evalComments}
+                  onChange={(e) => setEvalComments(e.target.value)}
+                  placeholder="Technical skills, communication, problem solving..."
+                  className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEvalCandidate(null)}
+                  className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-white/10 hover:bg-white/20 text-white"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 btn-primary py-2.5 text-xs font-bold uppercase tracking-wider text-black rounded-xl shadow-glow-sm">
+                  Save Evaluation
                 </button>
               </div>
             </form>

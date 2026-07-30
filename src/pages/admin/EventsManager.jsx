@@ -465,6 +465,9 @@ export default function EventsManager() {
             const approved = parseInt(evt.registration_summary?.approved_count || 0, 10);
             const totalReg = parseInt(evt.registration_summary?.total_registrations || 0, 10);
             const percent = evt.max_capacity > 0 ? Math.min(100, Math.round((approved / evt.max_capacity) * 100)) : 0;
+            const flags = typeof evt.feature_flags_json === 'string'
+              ? JSON.parse(evt.feature_flags_json || '{}')
+              : (evt.feature_flags_json || {});
 
             return (
               <div
@@ -491,9 +494,14 @@ export default function EventsManager() {
                 <div className="flex-1 flex flex-col justify-between space-y-4">
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-start gap-2">
-                      <h3 className="text-base font-black tracking-tight text-slate-200">
-                        {evt.title}
-                      </h3>
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-brand-500/10 text-brand-400 border border-brand-500/20 mr-2">
+                          {evt.event_type || 'Custom'}
+                        </span>
+                        <h3 className="text-base font-black tracking-tight text-slate-200 inline">
+                          {evt.title}
+                        </h3>
+                      </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
                           onClick={() => openEditModal(evt)}
@@ -524,8 +532,8 @@ export default function EventsManager() {
                     </p>
                   </div>
 
-                  {/* Metrics bar */}
-                  <div className="space-y-1.5">
+                  {/* Metrics bar & Contextual Action Button */}
+                  <div className="space-y-2">
                     <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                       <span>Date: {evt.event_date || 'TBD'}</span>
                       <span>Approved: {approved} / {evt.max_capacity} Seats</span>
@@ -537,6 +545,27 @@ export default function EventsManager() {
                         className="h-full bg-gradient-to-r from-brand-500 to-indigo-500 rounded-full"
                         style={{ width: `${percent}%` }}
                       />
+                    </div>
+
+                    {/* Contextual Action Button */}
+                    <div className="pt-2 flex items-center justify-between">
+                      {(evt.event_type === 'Recruitment' || flags.time_slots || flags.candidate_kanban) && (
+                        <button
+                          onClick={() => navigate(`/recruitment?event_id=${evt.id}`)}
+                          className="w-full py-1.5 px-3 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500 hover:text-black font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
+                        >
+                          🎯 Open Recruitment Console
+                        </button>
+                      )}
+
+                      {(evt.event_type === 'Symposium' || flags.theatrical_reveal) && (
+                        <button
+                          onClick={() => navigate(`/presentation?event_id=${evt.id}`)}
+                          className="w-full py-1.5 px-3 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500 hover:text-black font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
+                        >
+                          🎭 Seating & Reveal Stage
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

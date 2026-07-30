@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/client';
 
@@ -53,6 +54,8 @@ const STAGES = ['Applied', 'Screened', 'Interview Scheduled', 'Interviewed', 'Sh
 export default function InterviewRecruitmentPortal() {
   const { user } = useAuth();
   const isAdmin = user?.role_tier === 'Admin';
+  const [searchParams] = useSearchParams();
+  const queryEventId = searchParams.get('event_id');
 
   const [recruitmentEvents, setRecruitmentEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState('');
@@ -112,7 +115,9 @@ export default function InterviewRecruitmentPortal() {
           return e.event_type === 'Recruitment' || flags.time_slots || flags.candidate_kanban;
         });
         setRecruitmentEvents(eventsList);
-        if (eventsList.length > 0) {
+        if (queryEventId && eventsList.some(e => e.id.toString() === queryEventId)) {
+          setSelectedEventId(queryEventId);
+        } else if (eventsList.length > 0) {
           setSelectedEventId(eventsList[0].id.toString());
         }
       }

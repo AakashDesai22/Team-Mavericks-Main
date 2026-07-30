@@ -89,6 +89,7 @@ export default function EventsManager() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [eventDate, setEventDate] = useState('');
+  const [eventType, setEventType] = useState('Recruitment');
   const [maxCapacity, setMaxCapacity] = useState(100);
   const [status, setStatus] = useState('Draft');
   const [numDays, setNumDays] = useState(1);
@@ -137,6 +138,7 @@ export default function EventsManager() {
     setTitle('');
     setDescription('');
     setEventDate('');
+    setEventType('Recruitment');
     setMaxCapacity(100);
     setStatus('Draft');
     setNumDays(1);
@@ -159,6 +161,7 @@ export default function EventsManager() {
     setTitle(evt.title || '');
     setDescription(evt.description || '');
     setEventDate(evt.event_date || '');
+    setEventType(evt.event_type || 'Custom');
     setMaxCapacity(evt.max_capacity || 0);
     setStatus(evt.status || 'Draft');
     setNumDays(evt.num_days || 1);
@@ -178,6 +181,29 @@ export default function EventsManager() {
       }
     }
     setFinanceContacts(Array.isArray(contacts) ? contacts : []);
+    setFormSchema(evt.form_schema || '[]');
+    setFeedbackSchema(evt.feedback_schema || '[]');
+    setEditorStep(1);
+    setShowEditor(true);
+  };
+
+  const handleCloneEvent = (evt) => {
+    setEditingEvent(null);
+    setTitle(`${evt.title} (Clone)`);
+    setDescription(evt.description || '');
+    setEventDate('');
+    setEventType(evt.event_type || 'Custom');
+    setMaxCapacity(evt.max_capacity || 100);
+    setStatus('Draft');
+    setNumDays(evt.num_days || 1);
+    setSessionsPerDay(evt.sessions_per_day || 2);
+    setCoverImagePath(evt.cover_image_path || '');
+    setPaymentType(evt.payment_type || 'Free');
+    setPaymentAmount(parseFloat(evt.payment_amount || 0));
+    setPaymentContext(evt.payment_context || '');
+    setPaymentQrPath(evt.payment_qr_path || '');
+    setRequirePaymentProof(evt.require_payment_proof !== undefined ? parseInt(evt.require_payment_proof, 10) : 1);
+    setFinanceContacts(evt.finance_contacts || []);
     setFormSchema(evt.form_schema || '[]');
     setFeedbackSchema(evt.feedback_schema || '[]');
     setEditorStep(1);
@@ -248,10 +274,23 @@ export default function EventsManager() {
       return;
     }
 
+    let defaultFlags = {};
+    if (eventType === 'Recruitment') {
+      defaultFlags = { time_slots: true, candidate_kanban: true, sub_events: true, panels: true };
+    } else if (eventType === 'Workshop_Series') {
+      defaultFlags = { sub_events: true, sub_event_certificates: true, multi_day: true };
+    } else if (eventType === 'Literary_Fest') {
+      defaultFlags = { panels: true, topics_pool: true, judge_scoring: true, online_test_sso: true };
+    } else if (eventType === 'Symposium') {
+      defaultFlags = { multi_day: true, seating_cohorts: true, certificates: true, theatrical_reveal: true };
+    }
+
     const payload = {
       title: title.trim(),
       description: description.trim(),
       event_date: eventDate,
+      event_type: eventType,
+      feature_flags_json: defaultFlags,
       max_capacity: parseInt(maxCapacity, 10),
       status,
       num_days: parseInt(numDays, 10),
@@ -511,6 +550,13 @@ export default function EventsManager() {
                           <Icons.Edit className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          onClick={() => handleCloneEvent(evt)}
+                          className="p-1.5 rounded-lg border border-brand-500/10 bg-brand-500/5 hover:bg-brand-500/10 text-brand-300 transition-all text-[10px] font-bold"
+                          title="Clone Event as Template"
+                        >
+                          📋 Clone
+                        </button>
+                        <button
                           onClick={() => openFeedbackViewer(evt.id, evt.title)}
                           className="p-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.08] hover:border-brand-500/20 text-slate-400 hover:text-white transition-all"
                           title="View Feedback"
@@ -660,7 +706,22 @@ export default function EventsManager() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Event Blueprint Type:</label>
+                      <select
+                        value={eventType}
+                        onChange={(e) => setEventType(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-brand-300 text-xs font-bold focus:border-brand-500/60 focus:outline-none pr-8 cursor-pointer"
+                      >
+                        <option value="Recruitment" className="bg-surface-900">🎯 Recruitment Drive (Panels, Slots & Kanban)</option>
+                        <option value="Workshop_Series" className="bg-surface-900">🛠️ Workshop Series (Invicta Tiers & Certs)</option>
+                        <option value="Literary_Fest" className="bg-surface-900">🗣️ Literary Fest (Verbafest GD/Debate)</option>
+                        <option value="Symposium" className="bg-surface-900">🎭 Symposium (Bodhantra Seating & Reveal)</option>
+                        <option value="Custom" className="bg-surface-900">⚡ Custom Event</option>
+                      </select>
+                    </div>
+
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Max Capacity (Seats):</label>
                       <input

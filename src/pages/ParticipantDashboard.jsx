@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import api from '../api/client';
 import CertificateGenerator from '../components/CertificateGenerator';
 import DynamicFeedbackFormRenderer from '../components/DynamicFeedbackFormRenderer';
+import CandidateSlotBooking from '../components/CandidateSlotBooking';
 
 const Icons = {
   Calendar: (p) => (
@@ -497,6 +498,12 @@ export default function ParticipantDashboard() {
                   {activeReg.event_date}
                 </span>
               </div>
+
+              {/* Recruitment Interview Slot Booking Widget */}
+              <CandidateSlotBooking
+                eventId={activeReg.event_id}
+                candidateUserId={profile?.id}
+              />
 
               {/* Status display */}
               <div className="flex items-center gap-3">

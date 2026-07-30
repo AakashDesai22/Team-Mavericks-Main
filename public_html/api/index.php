@@ -485,6 +485,67 @@ try {
             'action'     => 'handleSubmitFeedback',
             'audit'      => 'Submit participant assessment feedback',
         ],
+
+        // --- Sub-Events & Workshops -----------------------------------------
+        'GET:sub-events' => [
+            'controller' => 'sub_events.php',
+            'action'     => 'handleListSubEvents',
+            'audit'      => 'List sub-events/workshops',
+        ],
+        'POST:sub-events' => [
+            'controller' => 'sub_events.php',
+            'action'     => 'handleCreateSubEvent',
+            'audit'      => 'Create sub-event',
+        ],
+
+        // --- Competition & Interview Panels --------------------------------
+        'GET:panels' => [
+            'controller' => 'panels.php',
+            'action'     => 'handleListPanels',
+            'audit'      => 'List panels',
+        ],
+        'POST:panels' => [
+            'controller' => 'panels.php',
+            'action'     => 'handleCreatePanel',
+            'audit'      => 'Create panel',
+        ],
+        'GET:panels/topics' => [
+            'controller' => 'panels.php',
+            'action'     => 'handleListTopics',
+            'audit'      => 'List panel topics',
+        ],
+        'POST:panels/topics' => [
+            'controller' => 'panels.php',
+            'action'     => 'handleCreateTopic',
+            'audit'      => 'Create panel topic',
+        ],
+
+        // --- Interviews & Recruitment -------------------------------------
+        'GET:interviews/candidates' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleListCandidates',
+            'audit'      => 'List recruitment candidates',
+        ],
+        'GET:interviews/slots' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleListSlots',
+            'audit'      => 'List interview slots',
+        ],
+        'POST:interviews/slots' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleCreateSlot',
+            'audit'      => 'Create interview slot',
+        ],
+        'GET:interviews/evaluations' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleListEvaluations',
+            'audit'      => 'List interview evaluations',
+        ],
+        'POST:interviews/evaluations' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleCreateEvaluation',
+            'audit'      => 'Create interview evaluation',
+        ],
     ];
 
     // ------------------------------------------------------------------
@@ -595,6 +656,54 @@ try {
             'action'     => 'handleGetEventFeedback',
             'audit'      => 'Fetch event feedback submissions',
             'paramNames' => ['event_id'],
+        ],
+        // PUT /sub-events/{id}
+        [
+            'pattern'    => '#^PUT:sub-events/(\d+)$#',
+            'controller' => 'sub_events.php',
+            'action'     => 'handleUpdateSubEvent',
+            'audit'      => 'Update sub-event',
+            'paramNames' => ['sub_event_id'],
+        ],
+        // DELETE /sub-events/{id}
+        [
+            'pattern'    => '#^DELETE:sub-events/(\d+)$#',
+            'controller' => 'sub_events.php',
+            'action'     => 'handleDeleteSubEvent',
+            'audit'      => 'Delete sub-event',
+            'paramNames' => ['sub_event_id'],
+        ],
+        // POST /panels/{id}/allocate
+        [
+            'pattern'    => '#^POST:panels/(\d+)/allocate$#',
+            'controller' => 'panels.php',
+            'action'     => 'handleAllocateCandidates',
+            'audit'      => 'Allocate candidates to panel',
+            'paramNames' => ['panel_id'],
+        ],
+        // POST /panels/{id}/judges
+        [
+            'pattern'    => '#^POST:panels/(\d+)/judges$#',
+            'controller' => 'panels.php',
+            'action'     => 'handleAssignJudges',
+            'audit'      => 'Assign judge to panel',
+            'paramNames' => ['panel_id'],
+        ],
+        // POST /interviews/slots/{id}/book
+        [
+            'pattern'    => '#^POST:interviews/slots/(\d+)/book$#',
+            'controller' => 'interviews.php',
+            'action'     => 'handleBookSlot',
+            'audit'      => 'Book interview slot',
+            'paramNames' => ['slot_id'],
+        ],
+        // PUT /interviews/candidates/{id}/stage
+        [
+            'pattern'    => '#^PUT:interviews/candidates/(\d+)/stage$#',
+            'controller' => 'interviews.php',
+            'action'     => 'handleUpdateCandidateStage',
+            'audit'      => 'Update candidate recruitment stage',
+            'paramNames' => ['candidate_user_id'],
         ],
     ];
 

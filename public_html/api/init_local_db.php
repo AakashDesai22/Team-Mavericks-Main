@@ -31,6 +31,7 @@ try {
         __DIR__ . '/migration_phase2.sql',
         __DIR__ . '/migration_phase3.sql',
         __DIR__ . '/migration_phase4.sql',
+        __DIR__ . '/migration_phase5.sql',
     ];
 
     foreach ($sqlFiles as $file) {
@@ -42,9 +43,17 @@ try {
         $sql = file_get_contents($file);
         if (trim($sql) === '') continue;
 
-        // Split multi-statement SQL strings
-        $pdo->exec($sql);
-        echo "[SUCCESS] Imported " . basename($file) . "\n";
+        try {
+            $pdo->exec($sql);
+            echo "[SUCCESS] Executed " . basename($file) . "\n";
+        } catch (\PDOException $e) {
+            // Ignore duplicate column / duplicate table errors (code 1060 / 1050 / 42S21 / 42S01)
+            if (in_array($e->getCode(), ['42S21', '42S01', '1060', '1050'], true) || str_contains($e->getMessage(), 'Duplicate column')) {
+                echo "[INFO] " . basename($file) . " (schema structures already applied).\n";
+            } else {
+                echo "[NOTICE] " . basename($file) . ": " . $e->getMessage() . "\n";
+            }
+        }
     }
 
     echo "==================================================\n";

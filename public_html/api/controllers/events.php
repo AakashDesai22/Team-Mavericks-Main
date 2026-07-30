@@ -76,7 +76,7 @@ function handleListEvents(array $ctx): void
     $total = (int)$countStmt->fetch()['total'];
 
     $dataSql = "SELECT e.id, e.title, e.description, e.event_date, e.max_capacity,
-                       e.status, e.cover_image_path, e.form_schema, e.num_days,
+                       e.status, e.event_type, e.parent_event_id, e.feature_flags_json, e.is_template, e.cover_image_path, e.form_schema, e.num_days,
                        e.sessions_per_day, e.payment_type, e.payment_amount,
                        e.payment_context, e.payment_qr_path, e.require_payment_proof, e.finance_contacts, e.feedback_schema, e.created_by,
                        u.name AS created_by_name,
@@ -168,7 +168,7 @@ function handleGetEvent(array $ctx): void
 
     $stmt = $pdo->prepare(
         'SELECT e.id, e.title, e.description, e.event_date, e.max_capacity,
-                e.status, e.cover_image_path, e.form_schema, e.num_days,
+                e.status, e.event_type, e.parent_event_id, e.feature_flags_json, e.is_template, e.cover_image_path, e.form_schema, e.num_days,
                 e.sessions_per_day, e.payment_type, e.payment_amount,
                 e.payment_context, e.payment_qr_path, e.require_payment_proof, e.finance_contacts, e.feedback_schema, e.created_by,
                 u.name AS created_by_name,
@@ -244,6 +244,11 @@ function handleGetEvent(array $ctx): void
     } else {
         $event['my_registration'] = null;
     }
+
+    // Fetch associated sub-events / workshops / competitions if any exist
+    $subStmt = $pdo->prepare('SELECT * FROM sub_events WHERE parent_event_id = :eid ORDER BY event_date ASC, start_time ASC');
+    $subStmt->execute([':eid' => $eventId]);
+    $event['sub_events'] = $subStmt->fetchAll();
 
     jsonResponse(200, [
         'success' => true,
@@ -341,35 +346,46 @@ function handleCreateEvent(array $ctx): void
     // -----------------------------------------------------------------------
     $pdo = Database::connect();
 
+    $eventType        = trim($body['event_type'] ?? 'Custom');
+    $parentEventId    = !empty($body['parent_event_id']) ? (int)$body['parent_event_id'] : null;
+    $featureFlagsJson = isset($body['feature_flags_json']) ? (is_array($body['feature_flags_json']) ? json_encode($body['feature_flags_json']) : $body['feature_flags_json']) : null;
+    $isTemplate       = isset($body['is_template']) ? (int)$body['is_template'] : 0;
+
     $stmt = $pdo->prepare(
         'INSERT INTO events (title, description, event_date, max_capacity, status, 
+                             event_type, parent_event_id, feature_flags_json, is_template,
                              cover_image_path, form_schema, feedback_schema, num_days, 
                              sessions_per_day, payment_type, payment_amount, 
                              payment_context, payment_qr_path, require_payment_proof, finance_contacts, created_by, created_at, updated_at)
          VALUES (:title, :desc, :date, :cap, :status, 
+                 :event_type, :parent_event_id, :feature_flags_json, :is_template,
                  :cover, :form_schema, :feedback_schema, :num_days, 
                  :sessions_per_day, :payment_type, :payment_amount, 
                  :payment_context, :payment_qr_path, :require_payment_proof, :finance_contacts, :creator, NOW(), NOW())'
     );
 
     $stmt->execute([
-        ':title'            => $title,
-        ':desc'             => $description !== '' ? $description : null,
-        ':date'             => $eventDate !== '' ? $eventDate : null,
-        ':cap'              => $maxCapacity,
-        ':status'           => $status,
-        ':cover'            => $coverImagePath !== '' ? $coverImagePath : null,
-        ':form_schema'      => $formSchema,
-        ':feedback_schema'  => $feedbackSchema,
-        ':num_days'         => $numDays,
-        ':sessions_per_day' => $sessionsPerDay,
-        ':payment_type'     => $paymentType,
-        ':payment_amount'   => $paymentAmount,
-        ':payment_context'  => $paymentContext !== '' ? $paymentContext : null,
-        ':payment_qr_path'  => $paymentQrPath !== '' ? $paymentQrPath : null,
+        ':title'              => $title,
+        ':desc'               => $description !== '' ? $description : null,
+        ':date'               => $eventDate !== '' ? $eventDate : null,
+        ':cap'                => $maxCapacity,
+        ':status'             => $status,
+        ':event_type'         => $eventType,
+        ':parent_event_id'    => $parentEventId,
+        ':feature_flags_json' => $featureFlagsJson,
+        ':is_template'        => $isTemplate,
+        ':cover'              => $coverImagePath !== '' ? $coverImagePath : null,
+        ':form_schema'        => $formSchema,
+        ':feedback_schema'    => $feedbackSchema,
+        ':num_days'           => $numDays,
+        ':sessions_per_day'   => $sessionsPerDay,
+        ':payment_type'       => $paymentType,
+        ':payment_amount'     => $paymentAmount,
+        ':payment_context'    => $paymentContext !== '' ? $paymentContext : null,
+        ':payment_qr_path'    => $paymentQrPath !== '' ? $paymentQrPath : null,
         ':require_payment_proof' => $requirePaymentProof,
-        ':finance_contacts' => $financeContacts,
-        ':creator'          => $user['id'],
+        ':finance_contacts'   => $financeContacts,
+        ':creator'            => $user['id'],
     ]);
 
     $newId = (int)$pdo->lastInsertId();
@@ -564,6 +580,26 @@ function handleUpdateEvent(array $ctx): void
     if (isset($body['require_payment_proof'])) {
         $updateFields[] = 'require_payment_proof = :require_payment_proof';
         $params[':require_payment_proof'] = (int)$body['require_payment_proof'];
+    }
+
+    if (isset($body['event_type'])) {
+        $updateFields[] = 'event_type = :event_type';
+        $params[':event_type'] = trim($body['event_type']);
+    }
+
+    if (array_key_exists('parent_event_id', $body)) {
+        $updateFields[] = 'parent_event_id = :parent_event_id';
+        $params[':parent_event_id'] = !empty($body['parent_event_id']) ? (int)$body['parent_event_id'] : null;
+    }
+
+    if (isset($body['feature_flags_json'])) {
+        $updateFields[] = 'feature_flags_json = :feature_flags_json';
+        $params[':feature_flags_json'] = is_array($body['feature_flags_json']) ? json_encode($body['feature_flags_json']) : $body['feature_flags_json'];
+    }
+
+    if (isset($body['is_template'])) {
+        $updateFields[] = 'is_template = :is_template';
+        $params[':is_template'] = (int)$body['is_template'];
     }
 
     if (isset($body['finance_contacts'])) {

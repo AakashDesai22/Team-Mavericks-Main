@@ -27,6 +27,7 @@ import AttendanceConsole from './pages/admin/AttendanceConsole';
 import EventFormDesigner from './pages/admin/EventFormDesigner';
 import MemberInviteManager from './pages/admin/MemberInviteManager';
 import ForensicAuditConsole from './pages/admin/ForensicAuditConsole';
+import InterviewRecruitmentPortal from './pages/admin/InterviewRecruitmentPortal';
 
 // Presentation Pages
 import PresentationHub from './pages/presentation/PresentationHub';
@@ -175,6 +176,15 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['Admin', 'Member']}>
               <PresentationHub />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/recruitment"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Member']}>
+              <InterviewRecruitmentPortal />
             </ProtectedRoute>
           }
         />

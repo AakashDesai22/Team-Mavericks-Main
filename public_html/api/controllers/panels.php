@@ -74,11 +74,12 @@ function handleCreatePanel(array $ctx): void
     $user = requireAuth($ctx, ['Admin']);
     $body = $ctx['body'];
 
-    $eventId    = (int)($body['event_id'] ?? 0);
-    $subEventId = !empty($body['sub_event_id']) ? (int)$body['sub_event_id'] : null;
-    $panelName  = trim($body['panel_name'] ?? '');
-    $venueRoom  = trim($body['venue_room'] ?? '');
-    $maxCap     = max(1, (int)($body['max_candidates'] ?? 10));
+    $eventId      = (int)($body['event_id'] ?? 0);
+    $subEventId   = !empty($body['sub_event_id']) ? (int)$body['sub_event_id'] : null;
+    $panelName    = trim($body['panel_name'] ?? '');
+    $venueRoom    = trim($body['venue_room'] ?? '');
+    $maxCap       = max(1, (int)($body['max_candidates'] ?? 100));
+    $judgeUserIds = is_array($body['judge_user_ids'] ?? null) ? $body['judge_user_ids'] : [];
 
     if ($eventId <= 0 || $panelName === '') {
         jsonResponse(400, ['success' => false, 'error' => 'event_id and panel_name are required.']);
@@ -86,7 +87,7 @@ function handleCreatePanel(array $ctx): void
 
     $pdo = Database::connect();
     $stmt = $pdo->prepare('INSERT INTO competition_panels (event_id, sub_event_id, panel_name, venue_room, max_candidates, status, created_at, updated_at)
-                           VALUES (:eid, :sub_id, :name, :venue, :max, "Draft", NOW(), NOW())');
+                           VALUES (:eid, :sub_id, :name, :venue, :max, "Scheduled", NOW(), NOW())');
     $stmt->execute([
         ':eid'    => $eventId,
         ':sub_id' => $subEventId,
@@ -95,10 +96,25 @@ function handleCreatePanel(array $ctx): void
         ':max'    => $maxCap,
     ]);
 
+    $panelId = (int)$pdo->lastInsertId();
+
+    // Assign team member interviewers if provided
+    if (!empty($judgeUserIds)) {
+        $jStmt = $pdo->prepare('INSERT INTO judge_assignments (panel_id, judge_user_id, assigned_role, created_at)
+                                VALUES (:pid, :jid, "Interviewer", NOW())
+                                ON DUPLICATE KEY UPDATE assigned_role = VALUES(assigned_role)');
+        foreach ($judgeUserIds as $jid) {
+            $jStmt->execute([
+                ':pid' => $panelId,
+                ':jid' => (int)$jid,
+            ]);
+        }
+    }
+
     jsonResponse(201, [
         'success'  => true,
-        'message'  => 'Panel created successfully.',
-        'panel_id' => (int)$pdo->lastInsertId(),
+        'message'  => 'Interview Panel created successfully.',
+        'panel_id' => $panelId,
     ]);
 }
 

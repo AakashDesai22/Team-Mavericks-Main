@@ -435,6 +435,21 @@ function handleApproveRegistration(array $ctx): void
             ]);
         }
 
+        // Initialize candidate recruitment pipeline stage as 'Applied'
+        $existingEval = $pdo->prepare('SELECT id FROM candidate_evaluations WHERE candidate_user_id = :uid AND event_id = :eid LIMIT 1');
+        $existingEval->execute([':uid' => $reg['user_id'], ':eid' => $reg['event_id']]);
+        if (!$existingEval->fetch()) {
+            $insertEval = $pdo->prepare(
+                'INSERT INTO candidate_evaluations (candidate_user_id, event_id, evaluator_user_id, stage, created_at, updated_at)
+                 VALUES (:uid, :eid, :eval_by, "Applied", NOW(), NOW())'
+            );
+            $insertEval->execute([
+                ':uid'     => $reg['user_id'],
+                ':eid'     => $reg['event_id'],
+                ':eval_by' => $user['id'],
+            ]);
+        }
+
         $pdo->commit();
     } catch (\Throwable $e) {
         $pdo->rollBack();

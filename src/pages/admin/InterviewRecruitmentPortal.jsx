@@ -294,7 +294,7 @@ export default function InterviewRecruitmentPortal() {
   const handleDeletePanel = async (panelId, name) => {
     if (!window.confirm(`Are you sure you want to delete panel "${name}"?`)) return;
     try {
-      const res = await api.delete(`/panels/${panelId}`);
+      const res = await api.del(`/panels/${panelId}`);
       if (res.data.success) {
         setAlert({ type: 'success', text: 'Panel deleted successfully.' });
         fetchEventData(selectedEventId);
@@ -409,7 +409,7 @@ export default function InterviewRecruitmentPortal() {
       // Normalize stage mapping for Status Filters
       let matchesStatus = false;
       if (statusFilter === 'All') {
-        matchesStatus = true;
+        matchesStatus = stage !== 'Rejected';
       } else if (statusFilter === 'Interview') {
         matchesStatus = stage === 'Interview' || stage === 'Interview Scheduled' || stage === 'Interviewed';
       } else {

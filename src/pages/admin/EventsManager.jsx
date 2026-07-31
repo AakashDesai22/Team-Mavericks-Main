@@ -332,7 +332,7 @@ export default function EventsManager() {
     }
 
     try {
-      const res = await api.delete(`/events/${eventId}`);
+      const res = await api.del(`/events/${eventId}`);
       if (res.ok && res.data?.success) {
         loadEvents();
       } else {

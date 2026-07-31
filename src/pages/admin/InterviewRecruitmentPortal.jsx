@@ -934,7 +934,14 @@ export default function InterviewRecruitmentPortal() {
           {/* TAB 2: MY PANELS */}
           {activeTab === 'my_panels' && (
             <div className="space-y-6">
-              <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Interview Panels Assigned to You</h3>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 border-b border-white/[0.06] pb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Interview Panels Assigned to You</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Interview slot times are for candidate reference. You can start, update, and evaluate assigned candidates at any time during operations.
+                  </p>
+                </div>
+              </div>
 
               {myAssignedPanels.length === 0 ? (
                 <div className="py-16 text-center glass-card rounded-2xl text-slate-500 text-xs italic">
@@ -946,47 +953,80 @@ export default function InterviewRecruitmentPortal() {
                     const panelCandidates = candidates.filter(c => c.panel_id === p.id);
 
                     return (
-                      <div key={p.id} className="glass-card p-6 rounded-2xl border border-white/[0.08] space-y-4">
-                        <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+                      <div key={p.id} className="glass-card p-6 rounded-2xl border border-white/[0.08] space-y-5">
+                        {/* Panel Header */}
+                        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-4">
                           <div>
-                            <h4 className="text-base font-black text-white">{p.panel_name}</h4>
-                            <div className="text-xs text-slate-400 mt-0.5">📍 Venue / Room: <span className="text-white font-semibold">{p.venue_room || 'TBD'}</span></div>
+                            <h4 className="text-base font-black text-white flex items-center gap-2">
+                              🏢 {p.panel_name}
+                            </h4>
+                            <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-3">
+                              <span>📍 Venue / Room / Link: <strong className="text-white">{p.venue_room || 'TBD'}</strong></span>
+                              <span className="text-white/20">•</span>
+                              <span>👥 Assigned Interviewers: <strong className="text-brand-300">{p.judges && p.judges.length > 0 ? p.judges.map(j => j.name).join(', ') : 'None assigned'}</strong></span>
+                            </div>
                           </div>
 
                           <span className="px-3 py-1 rounded-xl text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            {panelCandidates.length} Allocated Candidates
+                            {panelCandidates.length} Candidate(s) Allocated
                           </span>
                         </div>
 
+                        {/* Candidates List */}
                         <div className="space-y-3">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Candidates Scheduled for your panel:</span>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                            Assigned Candidates Roster:
+                          </span>
 
                           {panelCandidates.length === 0 ? (
-                            <p className="text-xs text-slate-500 italic">No candidates allocated to this panel yet.</p>
+                            <p className="text-xs text-slate-500 italic p-3 bg-white/[0.01] rounded-xl border border-white/[0.04]">
+                              No candidates allocated to this panel yet.
+                            </p>
                           ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               {panelCandidates.map((c) => (
-                                <div key={c.user_id} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
-                                  <div>
-                                    <div className="text-xs font-bold text-white">{c.name} ({c.branch})</div>
-                                    <div className="text-[10px] text-slate-400 mt-0.5">{c.email}</div>
+                                <div key={c.user_id} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-3 hover:border-white/20 transition-all flex flex-col justify-between">
+                                  <div className="space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div>
+                                        <div className="text-xs font-black text-white">{c.name}</div>
+                                        <div className="text-[10px] font-mono text-brand-400 font-semibold">{c.unique_registration_id || 'MAV-PRT'}</div>
+                                        <div className="text-[10px] text-slate-400 mt-0.5">{c.branch} • {c.academic_year}</div>
+                                      </div>
+                                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${getStatusBadgeStyle(c.stage || 'Applied')}`}>
+                                        {c.stage || 'Applied'}
+                                      </span>
+                                    </div>
+
                                     {c.slot_date && (
-                                      <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">📅 {c.slot_date} ({c.start_time} - {c.end_time})</div>
+                                      <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-bold">
+                                        📅 Showcase Schedule: {c.slot_date} ({c.start_time} - {c.end_time})
+                                      </div>
+                                    )}
+
+                                    {c.score !== null && c.score !== undefined && (
+                                      <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-bold space-y-0.5">
+                                        <div>Score: {c.score}/100 • Recommendation: {c.recommendation}</div>
+                                        {c.comments && <div className="text-slate-300 font-normal italic">"{c.comments}"</div>}
+                                      </div>
                                     )}
                                   </div>
 
-                                  <button
-                                    onClick={() => {
-                                      setEvalCandidate(c);
-                                      setEvalScore(c.score || 80);
-                                      setEvalComments(c.comments || '');
-                                      setEvalRecommendation(c.recommendation || 'Select');
-                                      setEvalStage(c.stage || 'Interview');
-                                    }}
-                                    className="px-3 py-1.5 rounded-xl bg-brand-500 text-black hover:bg-brand-400 font-black text-[10px] uppercase tracking-wider transition-all flex items-center gap-1 shadow-glow-sm"
-                                  >
-                                    <Icons.Star className="w-3 h-3 text-black" /> Evaluate
-                                  </button>
+                                  <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
+                                    <span className="text-[9px] text-slate-500 font-medium">Ready for evaluation</span>
+                                    <button
+                                      onClick={() => {
+                                        setEvalCandidate(c);
+                                        setEvalScore(c.score || 80);
+                                        setEvalComments(c.comments || '');
+                                        setEvalRecommendation(c.recommendation || 'Select');
+                                        setEvalStage(c.stage || 'Interview');
+                                      }}
+                                      className="px-3 py-1.5 rounded-xl bg-brand-500 text-black hover:bg-brand-400 font-black text-[10px] uppercase tracking-wider transition-all flex items-center gap-1 shadow-glow-sm cursor-pointer"
+                                    >
+                                      <Icons.Star className="w-3 h-3 text-black" /> {c.score !== null && c.score !== undefined ? 'Update Evaluation' : 'Evaluate Candidate'}
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1045,22 +1085,7 @@ export default function InterviewRecruitmentPortal() {
                         <div className="text-xs text-slate-400 space-y-1">
                           <div>📍 Venue / Room / Link: <span className="text-white font-semibold">{p.venue_room || 'TBD'}</span></div>
                           <div>👥 Allocated Candidates: <span className="text-white font-semibold">{p.allocated_candidates_count} candidates</span></div>
-                        </div>
-
-                        <div className="pt-2 border-t border-white/[0.06] space-y-2">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Assigned Team Interviewers:</span>
-                          {p.judges && p.judges.length > 0 ? (
-                            <div className="space-y-1">
-                              {p.judges.map((j) => (
-                                <div key={j.assignment_id} className="text-xs text-slate-200 flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-                                  <span className="font-medium">{j.name}</span>
-                                  <span className="text-[9px] text-brand-400 font-bold uppercase">{j.assigned_role}</span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-slate-500 italic">No team members assigned.</p>
-                          )}
+                          <div>👔 Panel Members: <span className="text-brand-300 font-semibold">{p.judges && p.judges.length > 0 ? p.judges.map(j => j.name).join(', ') : 'None assigned'}</span></div>
                         </div>
                       </div>
                     </div>
@@ -1070,30 +1095,30 @@ export default function InterviewRecruitmentPortal() {
             </div>
           )}
 
-          {/* TAB 4: PANEL ALLOCATION (Admin Only) */}
+          {/* TAB 4: ALLOCATE CANDIDATE TO PANEL */}
           {activeTab === 'allocate' && isAdmin && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Allocation Form */}
-              <div className="lg:col-span-5 glass-card p-6 rounded-2xl space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <Icons.Layer className="w-4 h-4 text-brand-400" /> Allocate Candidate to Panel
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              {/* Allocation Form (6 Cols) */}
+              <div className="lg:col-span-6 glass-card p-6 rounded-[28px] border border-white/10 space-y-5">
+                <h3 className="text-base font-black text-white border-b border-white/[0.06] pb-3">
+                  Allocate Candidate to Panel & Schedule
                 </h3>
 
                 <form onSubmit={handleAllocateCandidateToPanel} className="space-y-4">
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                      1. Select Candidate:
+                      Select Candidate:
                     </label>
                     <select
                       value={allocCandidateUserId}
                       onChange={(e) => setAllocCandidateUserId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
+                      className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none cursor-pointer"
                       required
                     >
                       <option value="">-- Choose Candidate --</option>
                       {candidates.map((c) => (
-                        <option key={c.user_id} value={c.user_id}>
-                          {c.name} ({c.branch}) — Current Stage: {c.stage || 'Applied'}
+                        <option key={c.user_id} value={c.user_id} className="bg-slate-900 text-white">
+                          Candidate: {c.name} ({c.branch} - {c.unique_registration_id})
                         </option>
                       ))}
                     </select>
@@ -1101,18 +1126,18 @@ export default function InterviewRecruitmentPortal() {
 
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                      2. Assign Interview Panel:
+                      Select Target Panel:
                     </label>
                     <select
                       value={allocPanelId}
                       onChange={(e) => setAllocPanelId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
+                      className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none cursor-pointer"
                       required
                     >
-                      <option value="">-- Choose Interview Panel --</option>
+                      <option value="">-- Choose Panel --</option>
                       {panels.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.panel_name} ({p.venue_room || 'TBD'})
+                        <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                          Panel: {p.panel_name} ({p.venue_room || 'No venue'})
                         </option>
                       ))}
                     </select>
@@ -1120,62 +1145,80 @@ export default function InterviewRecruitmentPortal() {
 
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                      3. Interview Date:
+                      Showcase Schedule Date:
                     </label>
                     <input
                       type="date"
                       value={allocSlotDate}
                       onChange={(e) => setAllocSlotDate(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none cursor-pointer"
+                      className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none"
                       required
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Start Time:</label>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                        Start Time:
+                      </label>
                       <input
-                        type="time"
+                        type="text"
+                        placeholder="e.g. 10:00 AM"
                         value={allocStartTime}
                         onChange={(e) => setAllocStartTime(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
+                        className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none"
                         required
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">End Time:</label>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                        End Time:
+                      </label>
                       <input
-                        type="time"
+                        type="text"
+                        placeholder="e.g. 10:20 AM"
                         value={allocEndTime}
                         onChange={(e) => setAllocEndTime(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
+                        className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none"
                         required
                       />
                     </div>
                   </div>
 
-                  <button type="submit" className="btn-primary text-xs py-3 w-full font-bold uppercase tracking-wider text-black rounded-xl shadow-glow-sm">
-                    Assign Candidate to Panel
+                  <button
+                    type="submit"
+                    className="w-full btn-primary py-3 rounded-xl text-xs font-black uppercase tracking-wider text-black mt-2 shadow-glow-sm"
+                  >
+                    Confirm Candidate Panel Allocation
                   </button>
                 </form>
               </div>
 
-              {/* Panel Allocation Summary List */}
-              <div className="lg:col-span-7 glass-card p-6 rounded-2xl space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Allocated Interview Schedule</h3>
+              {/* Roster Ledger (6 Cols) */}
+              <div className="lg:col-span-6 glass-card p-6 rounded-[28px] border border-white/10 space-y-4">
+                <h3 className="text-base font-black text-white border-b border-white/[0.06] pb-3">
+                  Allocated Candidate Schedules
+                </h3>
 
                 {candidates.filter(c => c.panel_name).length === 0 ? (
-                  <p className="text-xs text-slate-500 italic py-8">No candidates allocated to panels yet.</p>
+                  <div className="py-12 text-center text-xs text-slate-500 italic">
+                    No candidates allocated to any panel yet.
+                  </div>
                 ) : (
                   <div className="space-y-3 max-h-[550px] overflow-y-auto pr-2 custom-scrollbar">
                     {candidates.filter(c => c.panel_name).map((c) => (
                       <div key={c.user_id} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
                         <div>
-                          <div className="text-xs font-bold text-white">{c.name} ({c.branch})</div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">🏢 {c.panel_name} • 📍 {c.venue_room || 'TBD'}</div>
+                          <div className="text-xs font-black text-white flex items-center gap-1.5">
+                            <span>Candidate: {c.name}</span>
+                            <span className="text-[10px] font-mono text-brand-400">({c.unique_registration_id})</span>
+                          </div>
+                          <div className="text-[10px] text-slate-300 mt-0.5">
+                            🏢 Assigned Panel: <strong className="text-white">{c.panel_name}</strong> • 📍 Venue: <strong className="text-white">{c.venue_room || 'TBD'}</strong>
+                          </div>
                           {c.slot_date && (
                             <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">
-                              📅 {c.slot_date} ({c.start_time} - {c.end_time})
+                              📅 Showcase Time: {c.slot_date} ({c.start_time} - {c.end_time})
                             </div>
                           )}
                         </div>

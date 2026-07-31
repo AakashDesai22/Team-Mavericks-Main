@@ -307,10 +307,13 @@ export default function InterviewRecruitmentPortal() {
   const handleDeleteCandidate = async (userId, name) => {
     if (!window.confirm(`Are you sure you want to remove candidate "${name}" from this drive?`)) return;
     try {
-      setAlert({ type: 'success', text: `Candidate ${name} record updated.` });
-      fetchEventData(selectedEventId);
+      const res = await api.del(`/interviews/candidates/${userId}?event_id=${selectedEventId}`);
+      if (res.data.success) {
+        setAlert({ type: 'success', text: `Candidate "${name}" removed successfully.` });
+        fetchEventData(selectedEventId);
+      }
     } catch (err) {
-      setAlert({ type: 'error', text: 'Action failed.' });
+      setAlert({ type: 'error', text: err.response?.data?.error || 'Failed to remove candidate.' });
     }
   };
 

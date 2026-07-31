@@ -721,6 +721,14 @@ try {
             'audit'      => 'Update candidate recruitment stage',
             'paramNames' => ['candidate_user_id'],
         ],
+        // DELETE /interviews/candidates/{id}
+        [
+            'pattern'    => '#^DELETE:interviews/candidates/(\d+)$#',
+            'controller' => 'interviews.php',
+            'action'     => 'handleDeleteCandidate',
+            'audit'      => 'Delete candidate recruitment record',
+            'paramNames' => ['user_id'],
+        ],
     ];
 
     // ------------------------------------------------------------------

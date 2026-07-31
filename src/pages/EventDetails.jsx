@@ -83,6 +83,8 @@ export default function EventDetails() {
     }
   }, [showForm, event]);
 
+  const [userRegistrations, setUserRegistrations] = useState([]);
+
   useEffect(() => {
     async function loadEvent() {
       setLoading(true);
@@ -103,6 +105,25 @@ export default function EventDetails() {
     }
     loadEvent();
   }, [event_id]);
+
+  useEffect(() => {
+    async function loadUserRegistrations() {
+      if (user?.id) {
+        try {
+          const res = await api.get('/auth/me');
+          if (res.ok && res.data?.success) {
+            setUserRegistrations(res.data.registrations || []);
+          }
+        } catch (err) {
+          console.error('Failed to load user registrations:', err);
+        }
+      }
+    }
+    loadUserRegistrations();
+  }, [user]);
+
+  const isAlreadyRegistered = userRegistrations.some(r => r.event_id.toString() === event_id.toString());
+  const isArchived = event?.status === 'Archived';
 
   const handleRegistrationSubmit = async (formData, guestInfo) => {
     setSubmitting(true);
@@ -306,13 +327,30 @@ export default function EventDetails() {
                     </div>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(true)}
-                    className="w-full btn-primary py-3 rounded-xl text-xs font-black uppercase tracking-wider text-black flex items-center justify-center gap-2"
-                  >
-                    Secure Admission Slot
-                  </button>
+                  {isAlreadyRegistered ? (
+                    isArchived ? (
+                      <div className="w-full py-3.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 font-black text-xs uppercase tracking-wider text-center flex items-center justify-center gap-2">
+                        <span>🔒 Event Closed</span>
+                      </div>
+                    ) : (
+                      <div className="w-full py-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black text-xs uppercase tracking-wider text-center flex items-center justify-center gap-2">
+                        <Icons.Check className="w-4 h-4 text-emerald-400" />
+                        <span>Registered</span>
+                      </div>
+                    )
+                  ) : isArchived ? (
+                    <div className="w-full py-3.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 font-black text-xs uppercase tracking-wider text-center flex items-center justify-center gap-2">
+                      <span>🔒 Event Closed</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowForm(true)}
+                      className="w-full btn-primary py-3 rounded-xl text-xs font-black uppercase tracking-wider text-black flex items-center justify-center gap-2"
+                    >
+                      Secure Admission Slot
+                    </button>
+                  )}
                 </div>
 
                 {/* Interactive Guidelines Panel (4 Cols) */}

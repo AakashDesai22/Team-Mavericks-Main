@@ -272,3 +272,43 @@ function handleListCandidates(array $ctx): void
     ]);
 }
 
+/**
+ * DELETE /interviews/candidates/{id}?event_id=X
+ */
+function handleDeleteCandidate(array $ctx): void
+{
+    $admin   = requireAuth($ctx, ['Admin']);
+    $userId  = (int)($ctx['params'][0] ?? 0);
+    $eventId = (int)($ctx['query']['event_id'] ?? 0);
+
+    if ($userId <= 0 || $eventId <= 0) {
+        jsonResponse(400, ['success' => false, 'error' => 'user_id and event_id are required.']);
+    }
+
+    $pdo = Database::connect();
+
+    // 1. Delete from registrations & event_registrations
+    $stmt1 = $pdo->prepare('DELETE FROM registrations WHERE user_id = :uid AND event_id = :eid');
+    $stmt1->execute([':uid' => $userId, ':eid' => $eventId]);
+
+    $stmt1b = $pdo->prepare('DELETE FROM event_registrations WHERE user_id = :uid AND event_id = :eid');
+    $stmt1b->execute([':uid' => $userId, ':eid' => $eventId]);
+
+    // 2. Delete candidate evaluations
+    $stmt2 = $pdo->prepare('DELETE FROM candidate_evaluations WHERE candidate_user_id = :uid AND event_id = :eid');
+    $stmt2->execute([':uid' => $userId, ':eid' => $eventId]);
+
+    // 3. Clear booked interview slots
+    $stmt3 = $pdo->prepare('UPDATE interview_slots SET booked_by_user_id = NULL, is_booked = 0 WHERE booked_by_user_id = :uid AND event_id = :eid');
+    $stmt3->execute([':uid' => $userId, ':eid' => $eventId]);
+
+    // 4. Delete allocations
+    $stmt4 = $pdo->prepare('DELETE FROM allocations WHERE user_id = :uid AND event_id = :eid');
+    $stmt4->execute([':uid' => $userId, ':eid' => $eventId]);
+
+    jsonResponse(200, [
+        'success' => true,
+        'message' => 'Candidate record removed successfully.',
+    ]);
+}
+

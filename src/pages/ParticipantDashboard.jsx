@@ -489,7 +489,18 @@ export default function ParticipantDashboard() {
             <div className="glass-card p-6 rounded-[24px] space-y-5 text-left relative overflow-hidden">
               <div className="flex justify-between items-start pb-3 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                 <div className="min-w-0">
-                  <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Selected Event Details</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Selected Event Details</span>
+                    {activeReg.event_status === 'Archived' ? (
+                      <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-slate-800 text-slate-400 border border-slate-700">
+                        🔒 Event Closed
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        ✓ Registered
+                      </span>
+                    )}
+                  </div>
                   <h3 className="text-base font-black truncate mt-0.5" style={{ color: 'var(--text-primary)' }}>
                     {activeReg.event_title}
                   </h3>

@@ -21,41 +21,17 @@ jobs:
       - name: Install dependencies and build
         run: |
           npm install
+          # Force fix the permission denial by granting execute rights to the local binaries
           chmod +x node_modules/.bin/vite
           npm run build
 
-      - name: Prepare SSH Key and Known Hosts
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
-        env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
-
-      - name: Test SSH Connection
-        run: |
-          echo "Testing SSH connectivity to ${{ secrets.SSH_HOST }}:${{ secrets.SSH_PORT }}..."
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 -i ~/.ssh/id_rsa -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}"@"${{ secrets.SSH_HOST }}" "echo 'SSH Connection Successful!'" || echo "Warning: Direct SSH check timed out or failed, attempting SCP upload with retries..."
-
-      - name: Deploy to Hostinger via SCP with Retries
-        run: |
-          set -e
-          RETRIES=3
-          SUCCESS=0
-          for i in $(seq 1 $RETRIES); do
-            echo "Deployment Attempt $i of $RETRIES..."
-            if scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa -P "${{ secrets.SSH_PORT }}" -r public_html/* "${{ secrets.SSH_USER }}"@"${{ secrets.SSH_HOST }}":"domains/teammavericks.org/public_html/main/"; then
-              echo "Deployment succeeded on attempt $i!"
-              SUCCESS=1
-              break
-            else
-              echo "Upload failed on attempt $i, retrying in 10 seconds..."
-              sleep 10
-            fi
-          done
-
-          if [ $SUCCESS -eq 0 ]; then
-            echo "Error: All deployment retry attempts failed."
-            exit 1
-          fi
+      - name: Deploy to Hostinger Subdomain
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "public_html/"
+          target: "domains/teammavericks.org/public_html/main"
+          strip_components: 1

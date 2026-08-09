@@ -98,6 +98,32 @@ const Icons = {
       <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
       <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
     </svg>
+  ),
+  CheckCircle: (p) => (
+    <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  ),
+  Mail: (p) => (
+    <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+      <polyline points="22,6 12,13 2,6" />
+    </svg>
+  ),
+  Sliders: (p) => (
+    <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+      <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+      <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+      <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" />
+      <line x1="17" y1="16" x2="23" y2="16" />
+    </svg>
+  ),
+  History: (p) => (
+    <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><polyline points="3 3 3 8 8 8" />
+      <polyline points="12 7 12 12 15 15" />
+    </svg>
   )
 };
 
@@ -120,6 +146,33 @@ export default function InterviewRecruitmentPortal() {
   const [candidates, setCandidates] = useState([]);
   const [panels, setPanels] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
+
+  // Rubric Criteria State
+  const [criteriaList, setCriteriaList] = useState([]);
+  const [showRubricModal, setShowRubricModal] = useState(false);
+  const [editingCriteria, setEditingCriteria] = useState([]);
+
+  // Candidate History Timeline Modal State
+  const [historyCandidate, setHistoryCandidate] = useState(null);
+  const [candidateHistoryLogs, setCandidateHistoryLogs] = useState([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Quick Desk Check-In Modal State
+  const [showCheckinModal, setShowCheckinModal] = useState(false);
+  const [checkinTicketInput, setCheckinTicketInput] = useState('');
+  const [checkinCandidateResult, setCheckinCandidateResult] = useState(null);
+  const [checkinLoading, setCheckinLoading] = useState(false);
+
+  // Candidate Bulk Communication Dispatcher State
+  const [showCommunicateModal, setShowCommunicateModal] = useState(false);
+  const [commTargetSegment, setCommTargetSegment] = useState('Shortlisted');
+  const [commSubject, setCommSubject] = useState('');
+  const [commBodyHtml, setCommBodyHtml] = useState('');
+  const [sendingBulkEmail, setSendingBulkEmail] = useState(false);
+
+  // Evaluation criteria scoring state
+  const [evalCriteriaScores, setEvalCriteriaScores] = useState({});
 
   // Filter & Search states (default: 'All' matching screenshot)
   const [statusFilter, setStatusFilter] = useState('All');
@@ -170,6 +223,7 @@ export default function InterviewRecruitmentPortal() {
   useEffect(() => {
     if (selectedEventId) {
       fetchEventData(selectedEventId);
+      fetchCriteria(selectedEventId);
     }
   }, [selectedEventId]);
 
@@ -224,6 +278,17 @@ export default function InterviewRecruitmentPortal() {
       setAlert({ type: 'error', text: 'Error fetching recruitment details.' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCriteria = async (eventId) => {
+    try {
+      const res = await api.get(`/interviews/criteria?event_id=${eventId}`);
+      if (res.data.success) {
+        setCriteriaList(res.data.criteria || []);
+      }
+    } catch (err) {
+      console.error('Error fetching rubric criteria:', err);
     }
   };
 
@@ -362,11 +427,17 @@ export default function InterviewRecruitmentPortal() {
     if (!evalCandidate) return;
 
     try {
+      const payloadScores = criteriaList.map(crit => ({
+        criteria_id: crit.id,
+        score: evalCriteriaScores[crit.id] !== undefined ? evalCriteriaScores[crit.id] : (crit.max_marks * 0.8),
+      }));
+
       const res = await api.post('/interviews/evaluations', {
         candidate_user_id: evalCandidate.user_id,
         event_id: parseInt(selectedEventId),
         panel_id: evalCandidate.panel_id || null,
-        score: parseFloat(evalScore),
+        score: criteriaList.length > 0 ? null : parseFloat(evalScore),
+        criteria_scores: payloadScores,
         comments: evalComments,
         recommendation: evalRecommendation,
         stage: evalStage,
@@ -379,6 +450,109 @@ export default function InterviewRecruitmentPortal() {
       }
     } catch (err) {
       setAlert({ type: 'error', text: err.response?.data?.error || 'Evaluation failed.' });
+    }
+  };
+
+  // Rubric Setup Handlers
+  const openRubricSetup = () => {
+    setEditingCriteria(criteriaList.length > 0 ? [...criteriaList] : [
+      { title: 'Technical Depth & Knowledge', max_marks: 10, weightage: 2 },
+      { title: 'Soft Skills & Communication', max_marks: 10, weightage: 1 },
+      { title: 'Problem Solving & Logic', max_marks: 10, weightage: 2 },
+      { title: 'Team Culture Alignment', max_marks: 10, weightage: 1 },
+    ]);
+    setShowRubricModal(true);
+  };
+
+  const handleSaveCriteriaSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await api.post('/interviews/criteria', {
+        event_id: parseInt(selectedEventId),
+        criteria: editingCriteria,
+      });
+      if (res.data.success) {
+        setAlert({ type: 'success', text: 'Evaluation Rubric saved successfully!' });
+        setShowRubricModal(false);
+        fetchCriteria(selectedEventId);
+      }
+    } catch (err) {
+      setAlert({ type: 'error', text: err.response?.data?.error || 'Failed to save rubric.' });
+    }
+  };
+
+  // History Timeline Handler
+  const handleViewHistory = async (cand) => {
+    setHistoryCandidate(cand);
+    setShowHistoryModal(true);
+    setLoadingHistory(true);
+    try {
+      const res = await api.get(`/interviews/candidates/${cand.user_id}/history?event_id=${selectedEventId}`);
+      if (res.data.success) {
+        setCandidateHistoryLogs(res.data.history || []);
+      }
+    } catch (err) {
+      console.error('Error loading history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  // Quick PRN Check-in Handler
+  const handleQuickCheckinSubmit = async (e) => {
+    e.preventDefault();
+    if (!checkinTicketInput.trim()) return;
+
+    try {
+      setCheckinLoading(true);
+      const res = await api.post('/interviews/checkin', {
+        event_id: parseInt(selectedEventId),
+        prn_or_email: checkinTicketInput.trim(),
+      });
+      if (res.data.success) {
+        setCheckinCandidateResult(res.data.candidate);
+        setAlert({ type: 'success', text: res.data.message });
+        fetchEventData(selectedEventId);
+      }
+    } catch (err) {
+      setAlert({ type: 'error', text: err.response?.data?.error || 'Verification ticket not found.' });
+    } finally {
+      setCheckinLoading(false);
+    }
+  };
+
+  // Bulk Email Handler
+  const handleSendBulkEmailsSubmit = async (e) => {
+    e.preventDefault();
+    const targetCandidates = candidates.filter(c => {
+      if (commTargetSegment === 'All') return true;
+      return (c.stage || 'Applied').toLowerCase() === commTargetSegment.toLowerCase();
+    });
+
+    if (targetCandidates.length === 0) {
+      setAlert({ type: 'error', text: `No candidates found in ${commTargetSegment} segment.` });
+      return;
+    }
+
+    try {
+      setSendingBulkEmail(true);
+      const res = await api.post('/interviews/communicate', {
+        event_id: parseInt(selectedEventId),
+        candidate_user_ids: targetCandidates.map(c => c.user_id),
+        subject: commSubject,
+        body_html: commBodyHtml,
+      });
+
+      if (res.data.success) {
+        setAlert({ type: 'success', text: res.data.message });
+        setShowCommunicateModal(false);
+        setCommSubject('');
+        setCommBodyHtml('');
+      }
+    } catch (err) {
+      setAlert({ type: 'error', text: err.response?.data?.error || 'Failed to send bulk emails.' });
+    } finally {
+      setSendingBulkEmail(false);
     }
   };
 
@@ -442,64 +616,72 @@ export default function InterviewRecruitmentPortal() {
     return list;
   }, [candidates, statusFilter, domainFilter, searchQuery, sortOrder]);
 
+  // Recruitment Analytics Overview
+  const recruitmentStats = useMemo(() => {
+    const total = candidates.length;
+    const applied = candidates.filter(c => (c.stage || 'Applied') === 'Applied').length;
+    const shortlisted = candidates.filter(c => c.stage === 'Shortlisted').length;
+    const interviewed = candidates.filter(c => c.stage === 'Interview' || c.stage === 'Interviewed').length;
+    const selected = candidates.filter(c => c.stage === 'Selected').length;
+    const rejected = candidates.filter(c => c.stage === 'Rejected').length;
+    const checkedIn = candidates.filter(c => parseInt(c.checked_in_state, 10) === 1).length;
+    const intakeRatio = total > 0 ? ((selected / total) * 100).toFixed(1) : 0;
+
+    return { total, applied, shortlisted, interviewed, selected, rejected, checkedIn, intakeRatio };
+  }, [candidates]);
+
   // Status Badge Pill Styling Helper
   const getStatusBadgeStyle = (stage) => {
     const norm = (stage || 'Applied').toLowerCase();
     if (norm === 'selected') {
       return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
     } else if (norm === 'shortlisted') {
-      return 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30';
+      return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
+    } else if (norm === 'interview' || norm === 'interviewed') {
+      return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30';
     } else if (norm === 'under review') {
-      return 'bg-amber-500/10 text-amber-300 border-amber-500/30';
+      return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
     } else if (norm === 'rejected') {
       return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
-    } else if (norm.includes('interview')) {
-      return 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30';
-    } else {
-      return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
     }
-  };
-
-  // Export Filtered Candidates to CSV
-  const exportToCsv = () => {
-    if (filteredCandidates.length === 0) {
-      setAlert({ type: 'error', text: 'No candidates available to export.' });
-      return;
-    }
-
-    const headers = ['Student ID', 'Student Name', 'Email', 'Phone', 'Branch', 'Year of Study', 'Status', 'Assigned Panel', 'Score'];
-    const rows = filteredCandidates.map(c => [
-      `"${c.unique_registration_id || 'TM-26-' + c.user_id}"`,
-      `"${c.name || ''}"`,
-      `"${c.email || ''}"`,
-      `"${c.phone || ''}"`,
-      `"${c.branch || ''}"`,
-      `"${c.academic_year || ''}"`,
-      `"${c.stage || 'Applied'}"`,
-      `"${c.panel_name || 'N/A'}"`,
-      `"${c.score !== null && c.score !== undefined ? c.score : 'N/A'}"`
-    ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Student_Management_Candidates_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    return 'bg-slate-500/10 text-slate-300 border-slate-500/30';
   };
 
   const clearAllFilters = () => {
     setStatusFilter('All');
     setDomainFilter('All Domains');
     setSearchQuery('');
-    setSortOrder('asc');
+  };
+
+  const exportToCsv = () => {
+    if (candidates.length === 0) return;
+    const headers = ['STUDENT ID', 'STUDENT NAME', 'EMAIL', 'PHONE', 'BRANCH', 'YEAR', 'STAGE', 'SCORE', 'PANEL', 'ROOM'];
+    const rows = filteredCandidates.map(c => [
+      c.unique_registration_id || `TM-26-${c.user_id}`,
+      `"${c.name}"`,
+      c.email,
+      c.phone || '',
+      c.branch || '',
+      c.academic_year || '',
+      c.stage || 'Applied',
+      c.score !== null ? c.score : '',
+      `"${c.panel_name || ''}"`,
+      `"${c.venue_room || ''}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Student_Recruitment_Roster_${selectedEventId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
     <div className="space-y-6 animate-fade-in pb-16 text-slate-100 text-left">
-      {/* Breadcrumb Navigation matching screenshot */}
+      {/* Breadcrumb Navigation */}
       <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
         <div className="flex items-center gap-2">
           <span>Dashboard</span>
@@ -519,7 +701,7 @@ export default function InterviewRecruitmentPortal() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Drive Selector */}
           {recruitmentEvents.length > 0 && (
             <div className="flex items-center gap-2 bg-white/[0.03] p-1.5 rounded-xl border border-white/[0.08]">
@@ -538,10 +720,42 @@ export default function InterviewRecruitmentPortal() {
             </div>
           )}
 
+          {/* Quick Desk Check-in Button */}
+          <button
+            onClick={() => setShowCheckinModal(true)}
+            className="px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-xs font-bold text-emerald-400 transition-all flex items-center gap-1.5 shadow-sm"
+          >
+            <Icons.CheckCircle className="w-4 h-4 text-emerald-400" /> Ticket Verification
+          </button>
+
+          {/* Rubric Setup Button (Admin) */}
+          {isAdmin && (
+            <button
+              onClick={openRubricSetup}
+              className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs font-bold text-amber-300 transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <Icons.Sliders className="w-4 h-4 text-amber-300" /> Evaluation Rubric
+            </button>
+          )}
+
+          {/* Bulk Email Button (Admin) */}
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setCommSubject(`Important Update regarding Team Mavericks Recruitment 2026`);
+                setCommBodyHtml(`<p>Dear {candidate_name},</p><p>We are pleased to share an update regarding your recruitment application for Team Mavericks (PRN: {prn}).</p><p>Your current status is: <strong>{stage}</strong>.</p><p>Assigned Panel: {panel_name} (Venue: {venue_room})</p><p>Best regards,<br>Team Mavericks Recruitment Board</p>`);
+                setShowCommunicateModal(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-xs font-bold text-indigo-300 transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <Icons.Mail className="w-4 h-4 text-indigo-300" /> Bulk Email
+            </button>
+          )}
+
           {/* Export CSV Button */}
           <button
             onClick={exportToCsv}
-            className="px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-white transition-all flex items-center gap-2 shadow-sm"
+            className="px-3.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-white transition-all flex items-center gap-2 shadow-sm"
           >
             <Icons.Download className="w-4 h-4 text-slate-300" /> Export CSV
           </button>
@@ -557,6 +771,38 @@ export default function InterviewRecruitmentPortal() {
           <button onClick={() => setAlert(null)} className="font-bold text-[10px] uppercase hover:underline">Dismiss</button>
         </div>
       )}
+
+      {/* Recruitment Analytics & Funnel Breakdown Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] text-left space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Total Candidates</span>
+          <span className="text-xl font-black text-white block">{recruitmentStats.total}</span>
+        </div>
+        <div className="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-left space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-widest text-blue-300 block">Shortlisted</span>
+          <span className="text-xl font-black text-blue-400 block">{recruitmentStats.shortlisted}</span>
+        </div>
+        <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-left space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-widest text-indigo-300 block">Interviewed</span>
+          <span className="text-xl font-black text-indigo-400 block">{recruitmentStats.interviewed}</span>
+        </div>
+        <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-left space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300 block">Selected</span>
+          <span className="text-xl font-black text-emerald-400 block">{recruitmentStats.selected}</span>
+        </div>
+        <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-left space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-widest text-rose-300 block">Rejected</span>
+          <span className="text-xl font-black text-rose-400 block">{recruitmentStats.rejected}</span>
+        </div>
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-left space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-widest text-amber-300 block">Intake Ratio</span>
+          <span className="text-xl font-black text-amber-400 block">{recruitmentStats.intakeRatio}%</span>
+        </div>
+        <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-left space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-widest text-purple-300 block">Checked In</span>
+          <span className="text-xl font-black text-purple-400 block">{recruitmentStats.checkedIn}</span>
+        </div>
+      </div>
 
       {/* Primary Navigation Tabs */}
       <div className="flex items-center gap-2 border-b border-white/[0.08] pb-1 overflow-x-auto">
@@ -612,10 +858,10 @@ export default function InterviewRecruitmentPortal() {
         </div>
       ) : (
         <>
-          {/* TAB 1: CANDIDATE APPLICATIONS (UI Structure directly matching Screenshot) */}
+          {/* TAB 1: CANDIDATE APPLICATIONS */}
           {activeTab === 'candidates' && (
             <div className="space-y-5">
-              {/* STATUS FILTER PILL BUTTONS (Exact 7 status pills requested from screenshot) */}
+              {/* STATUS FILTER PILL BUTTONS */}
               <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
                 {STATUS_FILTERS.map((st) => {
                   const isActive = statusFilter === st;
@@ -648,7 +894,7 @@ export default function InterviewRecruitmentPortal() {
                   />
                 </div>
 
-                {/* Right side controls matching screenshot toolbar */}
+                {/* Right side controls matching toolbar */}
                 <div className="flex flex-wrap items-center gap-2.5">
                   {/* Domain Selector */}
                   <select
@@ -727,7 +973,7 @@ export default function InterviewRecruitmentPortal() {
                 </div>
               </div>
 
-              {/* TABLE VIEW (Exact UI Structure from Screenshot) */}
+              {/* TABLE VIEW */}
               {viewMode === 'table' ? (
                 <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl overflow-hidden shadow-sm">
                   <div className="overflow-x-auto">
@@ -810,6 +1056,14 @@ export default function InterviewRecruitmentPortal() {
                                   <td className="py-4 px-4 text-right whitespace-nowrap">
                                     <div className="flex items-center justify-end gap-2">
                                       <button
+                                        onClick={() => handleViewHistory(cand)}
+                                        className="p-1.5 rounded-lg border border-white/10 hover:bg-white/10 text-slate-300"
+                                        title="View Stage Audit History Timeline"
+                                      >
+                                        <Icons.History className="w-3.5 h-3.5 text-brand-300" />
+                                      </button>
+
+                                      <button
                                         onClick={() => {
                                           setEvalCandidate(cand);
                                           setEvalScore(cand.score || 80);
@@ -859,22 +1113,23 @@ export default function InterviewRecruitmentPortal() {
                           key={cand.user_id}
                           className="glass-card p-5 rounded-2xl border border-white/[0.08] bg-white/[0.01] hover:bg-white/[0.03] transition-all flex flex-col justify-between space-y-4"
                         >
-                          <div className="space-y-2">
-                            <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between gap-2 border-b border-white/[0.06] pb-3">
                               <div>
-                                <h3 className="text-sm font-black text-white">{cand.name}</h3>
-                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">{cand.unique_registration_id}</div>
+                                <span className="text-[9px] font-mono text-brand-400 font-bold">
+                                  {cand.unique_registration_id || `TM-26-${cand.user_id}`}
+                                </span>
+                                <h4 className="text-sm font-black text-white">{cand.name}</h4>
                               </div>
-
-                              <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border ${badgeStyle}`}>
+                              <span className={`px-2.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${badgeStyle}`}>
                                 {currentStage}
                               </span>
                             </div>
 
                             <div className="text-xs text-slate-300 space-y-1">
-                              <div>📚 {cand.branch || 'Branch N/A'} • {cand.academic_year || 'Year N/A'}</div>
-                              <div>✉️ {cand.email}</div>
-                              {cand.phone && <div>📞 {cand.phone}</div>}
+                              <div>Email: <span className="text-white">{cand.email}</span></div>
+                              {cand.phone && <div>Phone: <span className="text-white">{cand.phone}</span></div>}
+                              <div>Branch: <span className="text-white capitalize">{cand.branch || 'N/A'}</span> • Year: <span className="text-white uppercase">{cand.academic_year || 'N/A'}</span></div>
                             </div>
 
                             {cand.panel_name && (
@@ -898,6 +1153,13 @@ export default function InterviewRecruitmentPortal() {
                           {/* Action Bar */}
                           <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between gap-2">
                             <button
+                              onClick={() => handleViewHistory(cand)}
+                              className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-white text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
+                            >
+                              <Icons.History className="w-3 h-3 text-brand-300" /> Timeline
+                            </button>
+
+                            <button
                               onClick={() => {
                                 setEvalCandidate(cand);
                                 setEvalScore(cand.score || 80);
@@ -909,18 +1171,6 @@ export default function InterviewRecruitmentPortal() {
                             >
                               <Icons.Star className="w-3 h-3" /> Evaluate
                             </button>
-
-                            {isAdmin && (
-                              <select
-                                value={currentStage}
-                                onChange={(e) => handleStageChange(cand.user_id, e.target.value)}
-                                className="text-[10px] font-bold bg-surface-900 border border-white/10 rounded-xl px-2 py-1.5 text-slate-300 focus:outline-none cursor-pointer"
-                              >
-                                {STATUS_FILTERS.filter(s => s !== 'All').map((s) => (
-                                  <option key={s} value={s}>Move to: {s}</option>
-                                ))}
-                              </select>
-                            )}
                           </div>
                         </div>
                       );
@@ -1236,77 +1486,102 @@ export default function InterviewRecruitmentPortal() {
         </>
       )}
 
-      {/* CREATE / EDIT PANEL MODAL */}
-      {showPanelModal && isAdmin && (
+      {/* MODAL 1: EVALUATION RUBRIC CONFIGURATOR (Admin) */}
+      {showRubricModal && isAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="glass-card p-6 w-full max-w-lg rounded-[28px] border border-white/10 space-y-4">
+          <div className="glass-card p-6 w-full max-w-xl rounded-[28px] border border-white/10 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-              <h3 className="text-base font-bold text-white">{editingPanel ? 'Edit Interview Panel' : 'Create Interview Panel'}</h3>
-              <button onClick={() => setShowPanelModal(false)} className="text-slate-400 hover:text-white">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Icons.Sliders className="w-4 h-4 text-amber-300" /> Evaluation Rubric Configurator
+              </h3>
+              <button onClick={() => setShowRubricModal(false)} className="text-slate-400 hover:text-white">
                 <Icons.XCircle className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSavePanel} className="space-y-4">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Panel Name:</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Technical Domain Panel A"
-                  value={panelName}
-                  onChange={(e) => setPanelName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none"
-                  required
-                />
-              </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Define the multi-criteria quantitative evaluation parameters for this recruitment drive (e.g. Technical Depth, Problem Solving, Soft Skills). Evaluators will score candidates on these exact parameters.
+            </p>
 
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Venue / Room / Meeting Link:</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Lab 302 / Google Meet Link"
-                  value={venueRoom}
-                  onChange={(e) => setVenueRoom(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-semibold focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                  Assign Team Member Interviewers:
-                </label>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 border border-white/10 rounded-xl p-2 bg-surface-900 custom-scrollbar">
-                  {teamMembers.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic p-2">No team members found.</p>
-                  ) : (
-                    teamMembers.map((member) => (
-                      <label
-                        key={member.id}
-                        className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 cursor-pointer text-xs"
+            <form onSubmit={handleSaveCriteriaSubmit} className="space-y-4">
+              <div className="space-y-3">
+                {editingCriteria.map((crit, idx) => (
+                  <div key={idx} className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Criteria Parameter #{idx + 1}</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCriteria(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-rose-400 hover:text-rose-300 text-xs font-bold"
                       >
-                        <span className="text-white font-medium">{member.name} ({member.email})</span>
+                        Remove
+                      </button>
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="e.g. Technical Depth & Domain Knowledge"
+                      value={crit.title}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditingCriteria(prev => prev.map((item, i) => i === idx ? { ...item, title: val } : item));
+                      }}
+                      className="w-full px-3 py-2 rounded-lg bg-surface-900 border border-white/10 text-white text-xs font-medium focus:outline-none"
+                      required
+                    />
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">Max Marks (e.g. 10):</label>
                         <input
-                          type="checkbox"
-                          checked={selectedInterviewerIds.includes(member.id)}
-                          onChange={() => toggleInterviewerSelection(member.id)}
-                          className="accent-brand-500 w-4 h-4 rounded cursor-pointer"
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={crit.max_marks}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 10;
+                            setEditingCriteria(prev => prev.map((item, i) => i === idx ? { ...item, max_marks: val } : item));
+                          }}
+                          className="w-full px-3 py-1.5 rounded-lg bg-surface-900 border border-white/10 text-white text-xs font-medium focus:outline-none"
                         />
-                      </label>
-                    ))
-                  )}
-                </div>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">Weightage Multiplier (1-5):</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={crit.weightage}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 1;
+                            setEditingCriteria(prev => prev.map((item, i) => i === idx ? { ...item, weightage: val } : item));
+                          }}
+                          className="w-full px-3 py-1.5 rounded-lg bg-surface-900 border border-white/10 text-white text-xs font-medium focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
+
+              <button
+                type="button"
+                onClick={() => setEditingCriteria(prev => [...prev, { title: '', max_marks: 10, weightage: 1 }])}
+                className="w-full py-2.5 rounded-xl border border-dashed border-white/20 text-xs font-bold text-slate-300 hover:bg-white/5 transition-all flex items-center justify-center gap-1.5"
+              >
+                <Icons.Plus className="w-4 h-4 text-brand-300" /> Add Criteria Parameter
+              </button>
 
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowPanelModal(false)}
-                  className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-white/10 hover:bg-white/20 text-white"
+                  onClick={() => setShowRubricModal(false)}
+                  className="flex-1 py-2.5 text-xs font-bold uppercase rounded-xl bg-white/10 hover:bg-white/20 text-white"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="flex-1 btn-primary py-2.5 text-xs font-bold uppercase tracking-wider text-black rounded-xl shadow-glow-sm">
-                  {editingPanel ? 'Save Changes' : 'Create Panel'}
+                <button type="submit" className="flex-1 btn-primary py-2.5 text-xs font-black uppercase text-black rounded-xl shadow-glow-sm">
+                  Save Rubric Settings
                 </button>
               </div>
             </form>
@@ -1314,51 +1589,241 @@ export default function InterviewRecruitmentPortal() {
         </div>
       )}
 
-      {/* CANDIDATE EVALUATION / DETAILS MODAL */}
+      {/* MODAL 2: STAGE AUDIT TIMELINE MODAL */}
+      {showHistoryModal && historyCandidate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="glass-card p-6 w-full max-w-md rounded-[28px] border border-white/10 space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Icons.History className="w-4 h-4 text-brand-300" /> Stage Transition Audit
+                </h3>
+                <span className="text-[10px] font-mono text-brand-400">{historyCandidate.name} ({historyCandidate.unique_registration_id})</span>
+              </div>
+              <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-white">
+                <Icons.XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                <Icons.Spinner className="w-6 h-6 mx-auto mb-2 text-brand-400" />
+                Loading transition logs...
+              </div>
+            ) : candidateHistoryLogs.length === 0 ? (
+              <p className="text-xs text-slate-500 italic text-center py-6">No stage transition history logged yet.</p>
+            ) : (
+              <div className="space-y-3 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-white/10">
+                {candidateHistoryLogs.map((log) => (
+                  <div key={log.id} className="relative pl-7 text-xs space-y-1">
+                    <div className="absolute left-1.5 top-1.5 w-3 h-3 rounded-full bg-brand-400 border-2 border-slate-900" />
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white">{log.old_stage} → <span className="text-emerald-400">{log.new_stage}</span></span>
+                      <span className="text-[9px] text-slate-500 font-mono">{new Date(log.created_at.replace(/-/g, '/')).toLocaleString()}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Changed by: <strong className="text-slate-200">{log.changed_by_name || 'System / Admin'}</strong></div>
+                    {log.notes && <div className="p-2 rounded bg-white/[0.03] text-[10px] text-slate-300 italic">{log.notes}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: QUICK DESK TICKET CHECK-IN MODAL */}
+      {showCheckinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="glass-card p-6 w-full max-w-md rounded-[28px] border border-white/10 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Icons.CheckCircle className="w-5 h-5 text-emerald-400" /> Desk Ticket Verification
+              </h3>
+              <button onClick={() => { setShowCheckinModal(false); setCheckinCandidateResult(null); setCheckinTicketInput(''); }} className="text-slate-400 hover:text-white">
+                <Icons.XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Enter the candidate's unique PRN (e.g. <code>MAV-PRT-001</code>), email, or phone number to verify their ticket and check them in for the interview.
+            </p>
+
+            <form onSubmit={handleQuickCheckinSubmit} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Candidate PRN / Email / Ticket Code:</label>
+                <input
+                  type="text"
+                  placeholder="e.g. MAV-PRT-001 or student@example.com"
+                  value={checkinTicketInput}
+                  onChange={(e) => setCheckinTicketInput(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-mono font-bold focus:outline-none"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={checkinLoading}
+                className="w-full btn-primary py-3 rounded-xl text-xs font-black uppercase tracking-wider text-black shadow-glow-sm flex items-center justify-center gap-2"
+              >
+                {checkinLoading ? <Icons.Spinner className="w-4 h-4 text-black" /> : 'Verify Ticket & Mark Present'}
+              </button>
+            </form>
+
+            {checkinCandidateResult && (
+              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs space-y-1.5 animate-fade-in">
+                <div className="font-bold text-emerald-400">✓ Checked-In Successfully:</div>
+                <div className="text-white font-bold">{checkinCandidateResult.name}</div>
+                <div className="text-[10px] font-mono text-slate-300">{checkinCandidateResult.unique_registration_id} • {checkinCandidateResult.email}</div>
+                <div className="text-[10px] text-slate-400">{checkinCandidateResult.branch} • {checkinCandidateResult.academic_year}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: BULK RECRUITMENT EMAIL DISPATCHER MODAL */}
+      {showCommunicateModal && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="glass-card p-6 w-full max-w-lg rounded-[28px] border border-white/10 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Icons.Mail className="w-5 h-5 text-indigo-400" /> Templated Bulk Email Dispatcher
+              </h3>
+              <button onClick={() => setShowCommunicateModal(false)} className="text-slate-400 hover:text-white">
+                <Icons.XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendBulkEmailsSubmit} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Target Segment:</label>
+                <select
+                  value={commTargetSegment}
+                  onChange={(e) => setCommTargetSegment(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="All">All Active Candidates</option>
+                  <option value="Shortlisted">Shortlisted Candidates</option>
+                  <option value="Interview">Interview Stage Candidates</option>
+                  <option value="Selected">Selected Candidates</option>
+                  <option value="Rejected">Rejected Candidates</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Email Subject:</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Interview Venue & Schedule Update"
+                  value={commSubject}
+                  onChange={(e) => setCommSubject(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-white text-xs font-semibold focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Email Body (HTML supported):
+                </label>
+                <div className="text-[9px] text-slate-400 mb-1 flex flex-wrap gap-1">
+                  <span>Available tags:</span>
+                  <code className="text-brand-300">{'{candidate_name}'}</code>
+                  <code className="text-brand-300">{'{prn}'}</code>
+                  <code className="text-brand-300">{'{stage}'}</code>
+                  <code className="text-brand-300">{'{panel_name}'}</code>
+                  <code className="text-brand-300">{'{venue_room}'}</code>
+                </div>
+                <textarea
+                  rows={6}
+                  value={commBodyHtml}
+                  onChange={(e) => setCommBodyHtml(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-surface-900 border border-white/10 text-slate-200 text-xs font-mono focus:outline-none resize-none"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCommunicateModal(false)}
+                  className="flex-1 py-2.5 text-xs font-bold uppercase rounded-xl bg-white/10 hover:bg-white/20 text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingBulkEmail}
+                  className="flex-1 btn-primary py-2.5 text-xs font-black uppercase text-black rounded-xl shadow-glow-sm flex items-center justify-center gap-2"
+                >
+                  {sendingBulkEmail ? <Icons.Spinner className="w-4 h-4 text-black" /> : 'Dispatch Bulk Emails'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: EVALUATION MODAL WITH MULTI-CRITERIA RUBRIC */}
       {evalCandidate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="glass-card p-6 w-full max-w-lg rounded-[28px] border border-white/10 space-y-4">
+          <div className="glass-card p-6 w-full max-w-lg rounded-[28px] border border-white/10 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-              <h3 className="text-base font-bold text-white">Candidate Details & Evaluation</h3>
+              <div>
+                <h3 className="text-base font-bold text-white">Evaluate Candidate</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{evalCandidate.name} ({evalCandidate.branch} - {evalCandidate.unique_registration_id})</p>
+              </div>
               <button onClick={() => setEvalCandidate(null)} className="text-slate-400 hover:text-white">
                 <Icons.XCircle className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSubmitEvaluation} className="space-y-4">
-              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-bold text-white">{evalCandidate.name}</div>
-                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase border ${getStatusBadgeStyle(evalCandidate.stage || 'Applied')}`}>
-                    {evalCandidate.stage || 'Applied'}
+              {/* Dynamic Rubric Criteria Scoring Controls */}
+              {criteriaList.length > 0 ? (
+                <div className="space-y-3 bg-white/[0.02] p-4 rounded-2xl border border-white/[0.06]">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-300 block mb-2">
+                    Multi-Criteria Evaluation Rubric Parameters:
                   </span>
+                  {criteriaList.map((crit) => (
+                    <div key={crit.id} className="space-y-1 text-xs">
+                      <div className="flex justify-between font-bold text-slate-200">
+                        <span>{crit.title} (Max: {crit.max_marks})</span>
+                        <span className="text-amber-400">
+                          {evalCriteriaScores[crit.id] !== undefined ? evalCriteriaScores[crit.id] : Math.round(crit.max_marks * 0.8)} / {crit.max_marks}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max={crit.max_marks}
+                        step="0.5"
+                        value={evalCriteriaScores[crit.id] !== undefined ? evalCriteriaScores[crit.id] : Math.round(crit.max_marks * 0.8)}
+                        onChange={(e) => setEvalCriteriaScores(prev => ({ ...prev, [crit.id]: parseFloat(e.target.value) }))}
+                        className="w-full accent-amber-400 cursor-pointer"
+                      />
+                    </div>
+                  ))}
                 </div>
-                <div className="text-xs text-slate-300 font-mono">ID: {evalCandidate.unique_registration_id || ('TM-26-' + evalCandidate.user_id)}</div>
-                <div className="text-xs text-slate-400">Academic Info: <span className="text-slate-200">{evalCandidate.branch} ({evalCandidate.academic_year})</span></div>
-                <div className="text-xs text-slate-400">Email: <span className="text-slate-200">{evalCandidate.email}</span> • Phone: <span className="text-slate-200">{evalCandidate.phone || 'N/A'}</span></div>
-                {evalCandidate.panel_name && (
-                  <div className="text-xs text-indigo-300 pt-1 border-t border-white/[0.06]">
-                    🏢 Panel: <strong>{evalCandidate.panel_name}</strong> ({evalCandidate.venue_room || 'TBD'})
+              ) : (
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Overall Performance Score (0-100):
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={evalScore}
+                      onChange={(e) => setEvalScore(e.target.value)}
+                      className="w-full accent-blue-500 cursor-pointer"
+                    />
+                    <span className="text-lg font-black text-amber-400 w-12 text-right">{evalScore}</span>
                   </div>
-                )}
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                  Interview Score Rating (0 - 100):
-                </label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={evalScore}
-                    onChange={(e) => setEvalScore(e.target.value)}
-                    className="w-full accent-blue-500 cursor-pointer"
-                  />
-                  <span className="text-lg font-black text-amber-400 w-12 text-right">{evalScore}</span>
                 </div>
-              </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

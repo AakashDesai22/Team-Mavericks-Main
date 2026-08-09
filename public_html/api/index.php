@@ -546,6 +546,26 @@ try {
             'action'     => 'handleCreateEvaluation',
             'audit'      => 'Create interview evaluation',
         ],
+        'GET:interviews/criteria' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleGetCriteria',
+            'audit'      => 'List evaluation criteria',
+        ],
+        'POST:interviews/criteria' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleSaveCriteria',
+            'audit'      => 'Save evaluation criteria rubric',
+        ],
+        'POST:interviews/checkin' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleQuickCheckinCandidate',
+            'audit'      => 'Desk ticket check-in candidate',
+        ],
+        'POST:interviews/communicate' => [
+            'controller' => 'interviews.php',
+            'action'     => 'handleBulkCommunicateCandidates',
+            'audit'      => 'Bulk communicate candidates',
+        ],
     ];
 
     // ------------------------------------------------------------------
@@ -727,6 +747,14 @@ try {
             'controller' => 'interviews.php',
             'action'     => 'handleDeleteCandidate',
             'audit'      => 'Delete candidate recruitment record',
+            'paramNames' => ['user_id'],
+        ],
+        // GET /interviews/candidates/{id}/history
+        [
+            'pattern'    => '#^GET:interviews/candidates/(\d+)/history$#',
+            'controller' => 'interviews.php',
+            'action'     => 'handleGetCandidateHistory',
+            'audit'      => 'View candidate stage history timeline',
             'paramNames' => ['user_id'],
         ],
     ];
